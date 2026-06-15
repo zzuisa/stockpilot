@@ -1,0 +1,17 @@
+apiVersion: 1
+datasources:
+  - name: StockPilot-TSDB
+    uid: stockpilot-tsdb
+    type: postgres
+    access: proxy
+    url: tsdb:5432
+    user: sp
+    isDefault: true
+    secureJsonData:
+      password: $__env{DB_PASSWORD}
+    jsonData:
+      database: stockpilot
+      sslmode: disable
+      postgresVersion: 1600
+      timescaledb: true
+      maxOpenConns: 5

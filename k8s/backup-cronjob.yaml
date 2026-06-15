@@ -1,0 +1,48 @@
+# 每周日 03:00 pg_dump 备份(说明书 §20 调度表最后一行),保留 8 周
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: tsdb-backup
+  namespace: stockpilot
+spec:
+  schedule: "0 3 * * 0"
+  timeZone: Europe/Berlin
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+          - name: pg-dump
+            image: timescale/timescaledb:latest-pg16
+            command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              ts=$(date +%Y%m%d_%H%M%S)
+              pg_dump -h tsdb -U sp -d stockpilot -F c -f /backups/stockpilot_${ts}.dump
+              echo "backup done: stockpilot_${ts}.dump"
+              # 保留最近 8 周
+              find /backups -name 'stockpilot_*.dump' -mtime +56 -delete
+            env:
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: stockpilot-secrets
+                  key: DB_PASSWORD
+            volumeMounts:
+            - name: backups
+              mountPath: /backups
+            resources:
+              limits:
+                memory: "256Mi"
+                cpu: "500m"
+          volumes:
+          - name: backups
+            persistentVolumeClaim:
+              claimName: stockpilot-backups-pvc

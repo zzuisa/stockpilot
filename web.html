@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>StockPilot · UI 原型</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0C1117; --panel:#121922; --panel2:#0F151D;
+    --line:#1E2933; --line2:#2A3845;
+    --amber:#E8A33D; --amber-dim:#8A6526;
+    --up:#3DD68C; --down:#F4604E; --blue:#5BA8F5;
+    --text:#D9E0E8; --muted:#7C8896; --faint:#54616E;
+    --mono:'IBM Plex Mono',ui-monospace,monospace;
+    --sans:'IBM Plex Sans','Noto Sans SC',sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14px;line-height:1.5}
+  .wrap{max-width:960px;margin:0 auto;padding:16px 14px 60px}
+
+  /* ── header ── */
+  header{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;padding:6px 0 14px;border-bottom:1px solid var(--line)}
+  .logo{font-family:var(--mono);font-weight:600;font-size:18px;letter-spacing:.12em;color:var(--amber)}
+  .logo span{color:var(--faint)}
+  .env{font-family:var(--mono);font-size:11px;padding:2px 8px;border:1px solid var(--amber-dim);color:var(--amber);border-radius:3px;letter-spacing:.08em}
+  .clock{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--muted)}
+
+  /* ── pipeline strip (signature) ── */
+  .pipe{display:flex;gap:0;margin:14px 0 18px;border:1px solid var(--line);border-radius:6px;overflow-x:auto;background:var(--panel2)}
+  .stage{flex:1;min-width:108px;padding:10px 12px;border-right:1px solid var(--line);position:relative}
+  .stage:last-child{border-right:none}
+  .stage .k{font-size:11px;color:var(--faint);letter-spacing:.06em}
+  .stage .v{font-family:var(--mono);font-size:12px;margin-top:3px;color:var(--muted)}
+  .stage.ok .v{color:var(--up)}
+  .stage.wait .v{color:var(--amber)}
+  .stage.ok::after,.stage.wait::after{content:"";position:absolute;left:0;top:0;width:100%;height:2px}
+  .stage.ok::after{background:var(--up)}
+  .stage.wait::after{background:var(--amber);animation:pulse 1.6s infinite}
+  @keyframes pulse{50%{opacity:.35}}
+  @media (prefers-reduced-motion: reduce){.stage.wait::after{animation:none}}
+
+  /* ── tabs ── */
+  nav{display:flex;gap:4px;margin-bottom:16px;overflow-x:auto}
+  nav button{font-family:var(--sans);font-size:13px;padding:8px 14px;background:none;border:1px solid var(--line);
+    color:var(--muted);border-radius:5px;cursor:pointer;white-space:nowrap}
+  nav button.on{color:var(--amber);border-color:var(--amber-dim);background:rgba(232,163,61,.06)}
+  nav button:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+  .tab{display:none}.tab.on{display:block}
+
+  /* ── panels ── */
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px;margin-bottom:14px}
+  .panel h3{font-size:12px;color:var(--faint);font-weight:500;letter-spacing:.1em;margin-bottom:12px;text-transform:uppercase}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  @media(max-width:640px){.grid2{grid-template-columns:1fr}}
+
+  .big{font-family:var(--mono);font-size:26px;font-weight:600}
+  .sub{font-family:var(--mono);font-size:12px;color:var(--muted);margin-top:2px}
+  .up{color:var(--up)}.down{color:var(--down)}.am{color:var(--amber)}
+
+  table{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:12.5px}
+  th{text-align:left;color:var(--faint);font-weight:500;font-size:11px;padding:6px 8px;border-bottom:1px solid var(--line);letter-spacing:.05em}
+  td{padding:7px 8px;border-bottom:1px solid var(--panel2)}
+  tr:last-child td{border-bottom:none}
+  .r{text-align:right}
+
+  svg{display:block;width:100%}
+  .axis{font-family:var(--mono);font-size:10px;fill:var(--faint)}
+
+  /* heatmap */
+  .heat{display:grid;grid-template-columns:60px repeat(7,1fr);gap:3px;font-family:var(--mono);font-size:11px}
+  .heat .lbl{color:var(--muted);align-self:center}
+  .heat .c{height:26px;border-radius:3px;display:flex;align-items:center;justify-content:center;color:#0C1117;font-weight:600}
+  .heat .hd{color:var(--faint);text-align:center;font-size:10px}
+
+  /* telegram mock */
+  .tg{max-width:430px;margin:0 auto;background:#0E141B;border:1px solid var(--line2);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:10px}
+  .msg{background:#16202B;border:1px solid var(--line);border-radius:10px;padding:11px 13px;font-size:13px;max-width:95%}
+  .msg .from{font-size:11px;color:var(--blue);margin-bottom:5px;font-family:var(--mono)}
+  .msg pre{font-family:var(--mono);font-size:12px;white-space:pre-wrap;color:var(--text);line-height:1.55}
+  .msg .meta{font-size:10px;color:var(--faint);text-align:right;margin-top:5px;font-family:var(--mono)}
+  .btnrow{display:flex;gap:8px;margin-top:9px}
+  .tgbtn{flex:1;font-family:var(--sans);font-size:13px;padding:8px;border-radius:7px;border:1px solid var(--line2);
+    background:#1B2733;color:var(--text);cursor:pointer}
+  .tgbtn.ok{border-color:rgba(61,214,140,.4);color:var(--up)}
+  .tgbtn.no{border-color:rgba(244,96,78,.35);color:var(--down)}
+  .tgbtn:disabled{opacity:.35;cursor:default}
+  .risk{font-family:var(--mono);font-size:12px;line-height:1.8}
+  .risk .pass::before{content:"✓ ";color:var(--up)}
+  .hidden{display:none}
+
+  /* io blocks */
+  .io h4{font-family:var(--mono);font-size:12px;color:var(--amber);margin:16px 0 6px;font-weight:500}
+  .io h4:first-child{margin-top:0}
+  .io .dir{color:var(--faint);font-weight:400}
+  pre.code{background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:12px;
+    font-family:var(--mono);font-size:11.5px;line-height:1.6;overflow-x:auto;color:#B9C4CF}
+  pre.code .k{color:var(--blue)} pre.code .s{color:var(--up)} pre.code .n{color:var(--amber)} pre.code .c{color:var(--faint)}
+  .note{font-size:12px;color:var(--muted);margin-top:6px;line-height:1.6}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="logo">STOCK<span>/</span>PILOT</div>
+  <div class="env">ENV: DEMO</div>
+  <div class="clock">2026-06-11 14:32 CET · 美股开盘前 1h 58m</div>
+</header>
+
+<!-- 签名元素:管道状态条,每格对应一个调度任务 -->
+<div class="pipe" aria-label="数据管道状态">
+  <div class="stage ok"><div class="k">T212 同步</div><div class="v">14:00 ✓</div></div>
+  <div class="stage ok"><div class="k">行情采集</div><div class="v">昨日 22:40 ✓</div></div>
+  <div class="stage ok"><div class="k">指标·信号</div><div class="v">2 条新信号</div></div>
+  <div class="stage ok"><div class="k">LLM 情绪</div><div class="v">23:00 ✓ 41 条</div></div>
+  <div class="stage ok"><div class="k">早报推送</div><div class="v">08:00 ✓</div></div>
+  <div class="stage wait"><div class="k">执行队列</div><div class="v">1 待确认</div></div>
+</div>
+
+<nav>
+  <button class="on" data-t="t1">账户复盘</button>
+  <button data-t="t2">市场雷达</button>
+  <button data-t="t3">Telegram 流</button>
+  <button data-t="t4">输入 / 输出</button>
+</nav>
+
+<!-- ════════ TAB 1 账户复盘 ════════ -->
+<section class="tab on" id="t1">
+  <div class="grid2">
+    <div class="panel">
+      <h3>总资产 · positions_snapshot</h3>
+      <div class="big">€12,847.30</div>
+      <div class="sub"><span class="up">+€312.45 (+2.49%)</span> 近 30 日</div>
+      <svg viewBox="0 0 400 110" aria-label="资产曲线">
+        <polyline fill="none" stroke="#E8A33D" stroke-width="1.6"
+          points="0,78 27,74 54,80 81,69 108,72 135,61 162,65 189,55 216,58 243,49 270,52 297,43 324,47 351,36 378,32 400,28"/>
+        <polyline fill="rgba(232,163,61,.07)" stroke="none"
+          points="0,78 27,74 54,80 81,69 108,72 135,61 162,65 189,55 216,58 243,49 270,52 297,43 324,47 351,36 378,32 400,28 400,110 0,110"/>
+        <text x="2" y="105" class="axis">05-12</text><text x="365" y="105" class="axis">06-11</text>
+      </svg>
+    </div>
+    <div class="panel">
+      <h3>资金分布 · /equity/account/cash</h3>
+      <table>
+        <tr><td>已投资 invested</td><td class="r">€10,210.84</td></tr>
+        <tr><td>浮动盈亏 ppl</td><td class="r up">+€486.21</td></tr>
+        <tr><td>可用现金 free</td><td class="r">€2,150.25</td></tr>
+        <tr><td>累计分红</td><td class="r">€87.12</td></tr>
+        <tr><td>当日已实现盈亏</td><td class="r down">−€23.40</td></tr>
+        <tr><td>熔断余量(限 €100)</td><td class="r am">€76.60</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h3>持仓 · /equity/positions(14:00 快照)</h3>
+    <table>
+      <tr><th>TICKER</th><th class="r">数量</th><th class="r">均价</th><th class="r">现价</th><th class="r">盈亏</th><th class="r">占比</th></tr>
+      <tr><td>NVDA_US_EQ</td><td class="r">2.40</td><td class="r">118.20</td><td class="r">141.65</td><td class="r up">+€201.30 +19.8%</td><td class="r">26%</td></tr>
+      <tr><td>2DG_DE_EQ</td><td class="r">15.00</td><td class="r">42.10</td><td class="r">45.83</td><td class="r up">+€55.95 +8.9%</td><td class="r">21%</td></tr>
+      <tr><td>AAPL_US_EQ</td><td class="r">4.10</td><td class="r">196.40</td><td class="r">189.92</td><td class="r down">−€26.57 −3.3%</td><td class="r">19%</td></tr>
+      <tr><td>MSFT_US_EQ</td><td class="r">1.80</td><td class="r">421.05</td><td class="r">448.10</td><td class="r up">+€48.69 +6.4%</td><td class="r">18%</td></tr>
+      <tr><td>VUAA_DE_EQ</td><td class="r">8.20</td><td class="r">98.33</td><td class="r">101.07</td><td class="r up">+€22.47 +2.8%</td><td class="r">16%</td></tr>
+    </table>
+  </div>
+</section>
+
+<!-- ════════ TAB 2 市场雷达 ════════ -->
+<section class="tab" id="t2">
+  <div class="panel">
+    <h3>NVDA · 日线 + 信号标注(Grafana annotation)</h3>
+    <svg viewBox="0 0 400 130" aria-label="NVDA 价格与信号">
+      <polyline fill="none" stroke="#5BA8F5" stroke-width="1.5"
+        points="0,95 25,90 50,98 75,84 100,88 125,72 150,77 175,60 200,66 225,52 250,58 275,44 300,50 325,38 350,42 375,30 400,26"/>
+      <polyline fill="none" stroke="#54616E" stroke-width="1" stroke-dasharray="4 3"
+        points="0,100 50,97 100,92 150,85 200,78 250,70 300,62 350,54 400,47"/>
+      <circle cx="125" cy="72" r="4.5" fill="#3DD68C"/>
+      <text x="112" y="62" class="axis" fill="#3DD68C">rsi_oversold ▲</text>
+      <circle cx="275" cy="44" r="4.5" fill="#E8A33D"/>
+      <text x="240" y="34" class="axis" fill="#E8A33D">news_shock ⚠</text>
+      <text x="2" y="125" class="axis">虚线 = SMA50 · 圆点 = signals 表记录</text>
+    </svg>
+  </div>
+
+  <div class="grid2">
+    <div class="panel">
+      <h3>指标面板(收盘后计算)</h3>
+      <table>
+        <tr><th>SYMBOL</th><th class="r">RSI14</th><th class="r">MACD</th><th class="r">vs SMA200</th></tr>
+        <tr><td>NVDA</td><td class="r am">68.2</td><td class="r up">↑ 金叉</td><td class="r up">+18%</td></tr>
+        <tr><td>AAPL</td><td class="r up">28.4</td><td class="r">—</td><td class="r up">+2%</td></tr>
+        <tr><td>MSFT</td><td class="r">55.1</td><td class="r">—</td><td class="r up">+9%</td></tr>
+        <tr><td>2DG</td><td class="r">61.7</td><td class="r up">↑ 金叉</td><td class="r up">+6%</td></tr>
+      </table>
+    </div>
+    <div class="panel">
+      <h3>新闻情绪热力 · news.sentiment 按日聚合</h3>
+      <div class="heat">
+        <div></div>
+        <div class="hd">06-05</div><div class="hd">06-06</div><div class="hd">06-07</div><div class="hd">06-08</div><div class="hd">06-09</div><div class="hd">06-10</div><div class="hd">06-11</div>
+        <div class="lbl">NVDA</div>
+        <div class="c" style="background:#3DD68C">+1.4</div><div class="c" style="background:#2FA76E">+0.8</div><div class="c" style="background:#21384A;color:#7C8896">0</div><div class="c" style="background:#21384A;color:#7C8896">0</div><div class="c" style="background:#3DD68C">+1.6</div><div class="c" style="background:#F4604E">−1.5</div><div class="c" style="background:#C9543F">−0.9</div>
+        <div class="lbl">AAPL</div>
+        <div class="c" style="background:#21384A;color:#7C8896">0</div><div class="c" style="background:#C9543F">−0.7</div><div class="c" style="background:#F4604E">−1.2</div><div class="c" style="background:#21384A;color:#7C8896">0</div><div class="c" style="background:#2FA76E">+0.5</div><div class="c" style="background:#3DD68C">+1.1</div><div class="c" style="background:#2FA76E">+0.6</div>
+        <div class="lbl">MSFT</div>
+        <div class="c" style="background:#2FA76E">+0.4</div><div class="c" style="background:#21384A;color:#7C8896">0</div><div class="c" style="background:#2FA76E">+0.9</div><div class="c" style="background:#3DD68C">+1.2</div><div class="c" style="background:#21384A;color:#7C8896">0</div><div class="c" style="background:#2FA76E">+0.3</div><div class="c" style="background:#21384A;color:#7C8896">0</div>
+      </div>
+      <div class="note">分值 = 当日该标的所有新闻 LLM 评分均值(−2 … +2)</div>
+    </div>
+  </div>
+</section>
+
+<!-- ════════ TAB 3 Telegram 流 ════════ -->
+<section class="tab" id="t3">
+  <div class="panel">
+    <h3>每日早报(08:00 推送,Dify Workflow B 输出)</h3>
+    <div class="tg">
+      <div class="msg">
+        <div class="from">StockPilot Bot</div>
+        <pre>📋 早报 · 2026-06-11 周四
+
+① 账户:€12,847 (+2.5% / 30d)
+   现金 €2,150 · 今日财报:无持仓相关
+
+② 持仓异动
+   NVDA  +3.2%  数据中心订单超预期
+   AAPL  −1.8%  欧盟反垄断听证临近
+   2DG   +1.1%  无重大新闻
+
+③ 信号(昨日收盘)
+   • AAPL rsi_oversold → 已生成待确认单
+   • NVDA news_shock ⚠ 情绪连续2日为负
+
+④ 新闻雷达:NVDA 出口管制传闻发酵中,
+   关注今晚美方声明;美 CPI 数据 14:30 ET
+
+⑤ 今日关注:AAPL 确认单 30 分钟内有效</pre>
+        <div class="meta">08:00</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h3>信号确认流(可点击体验)</h3>
+    <div class="tg" id="tgflow">
+      <div class="msg">
+        <div class="from">StockPilot Bot</div>
+        <pre>📈 信号触发 · AAPL_US_EQ
+规则: rsi_oversold (RSI 28.4, 价格站上 SMA200)
+情绪: +0.6 (近3日均值)
+
+建议: 买入 €150.00 ≈ 0.79 股 @ 189.92
+intent: 7f3a…c21d · 30 分钟内有效</pre>
+        <div class="btnrow">
+          <button class="tgbtn ok" id="btnOk">✅ 确认下单</button>
+          <button class="tgbtn no" id="btnNo">❌ 忽略</button>
+        </div>
+        <div class="meta">14:31</div>
+      </div>
+
+      <div class="msg hidden" id="msgRisk">
+        <div class="from">StockPilot Bot</div>
+        <pre class="risk" id="riskList"></pre>
+        <div class="meta">14:31</div>
+      </div>
+
+      <div class="msg hidden" id="msgDone">
+        <div class="from">StockPilot Bot</div>
+        <pre>🧾 已提交市价单 (DEMO)
+POST /equity/orders/market
+{ "ticker": "AAPL_US_EQ", "quantity": 0.79 }
+
+t212_order_id: 31482067
+状态: sent → 5 分钟后核对成交并回执</pre>
+        <div class="meta">14:32</div>
+      </div>
+
+      <div class="msg hidden" id="msgSkip">
+        <div class="from">StockPilot Bot</div>
+        <pre>已忽略。intent 7f3a…c21d → expired
+该信号今日不再重复推送。</pre>
+        <div class="meta">14:31</div>
+      </div>
+    </div>
+    <div class="note">真实实现:按钮回调打到 FastAPI webhook → 风控校验 → 原子状态机(confirmed→sent)→ T212 下单。任何一步失败都只回推原因,绝不重试下单。</div>
+  </div>
+</section>
+
+<!-- ════════ TAB 4 输入/输出 ════════ -->
+<section class="tab" id="t4">
+  <div class="panel io">
+    <h4>① T212 持仓同步 <span class="dir">— GET /equity/positions → positions_snapshot 表</span></h4>
+<pre class="code">[ { <span class="k">"ticker"</span>: <span class="s">"AAPL_US_EQ"</span>,
+    <span class="k">"quantity"</span>: <span class="n">4.1</span>,
+    <span class="k">"averagePrice"</span>: <span class="n">196.40</span>,
+    <span class="k">"currentPrice"</span>: <span class="n">189.92</span>,
+    <span class="k">"ppl"</span>: <span class="n">-26.57</span>,
+    <span class="k">"initialFillDate"</span>: <span class="s">"2026-03-02T15:31:08Z"</span> }, … ]</pre>
+
+    <h4>② 行情采集 <span class="dir">— yfinance → prices 超表(upsert)</span></h4>
+<pre class="code"><span class="c"># 入库行示例</span>
+(ts=<span class="s">'2026-06-10 20:00Z'</span>, symbol=<span class="s">'AAPL'</span>, interval=<span class="s">'1d'</span>,
+ open=<span class="n">192.10</span>, high=<span class="n">193.04</span>, low=<span class="n">188.75</span>, close=<span class="n">189.92</span>, volume=<span class="n">58214300</span>)</pre>
+
+    <h4>③ Dify Workflow A 情绪打分 <span class="dir">— 输入</span></h4>
+<pre class="code">{ <span class="k">"symbol"</span>: <span class="s">"NVDA"</span>,
+  <span class="k">"news"</span>: [
+    { <span class="k">"url"</span>: <span class="s">"https://…/nvda-export"</span>,
+      <span class="k">"title"</span>: <span class="s">"US weighs new chip export rules"</span>,
+      <span class="k">"summary"</span>: <span class="s">"Officials are considering…"</span> }, … ] }</pre>
+
+    <h4>　 Dify Workflow A <span class="dir">— 输出(写回 news 表)</span></h4>
+<pre class="code">{ <span class="k">"items"</span>: [ { <span class="k">"url"</span>: <span class="s">"https://…/nvda-export"</span>, <span class="k">"score"</span>: <span class="n">-2</span>,
+      <span class="k">"reason"</span>: <span class="s">"出口管制为已推进的政策事实,直接影响数据中心营收"</span> } ],
+  <span class="k">"overall"</span>: <span class="n">-1.5</span>,
+  <span class="k">"summary"</span>: <span class="s">"出口管制风险升级,短期承压;需求端无恶化迹象。"</span>,
+  <span class="k">"events"</span>: [<span class="s">"宏观"</span>, <span class="s">"监管"</span>] }</pre>
+
+    <h4>④ 信号记录 <span class="dir">— signals 表 → Telegram 卡片</span></h4>
+<pre class="code">(ts=<span class="s">'2026-06-10 22:42Z'</span>, symbol=<span class="s">'AAPL'</span>, rule=<span class="s">'rsi_oversold'</span>,
+ direction=<span class="s">'buy'</span>, strength=<span class="n">0.72</span>,
+ payload={<span class="k">"rsi"</span>: <span class="n">28.4</span>, <span class="k">"close"</span>: <span class="n">189.92</span>, <span class="k">"sma200"</span>: <span class="n">186.1</span>, <span class="k">"sent_avg"</span>: <span class="n">0.6</span>})</pre>
+
+    <h4>⑤ 下单意图生命周期 <span class="dir">— order_intents 状态机</span></h4>
+<pre class="code">pending ──用户点确认──▶ confirmed ──风控通过+原子UPDATE──▶ sent
+   │                        │                              │
+   └─30min──▶ expired       └─风控拒绝──▶ rejected          └─核对成交──▶ filled
+                                                           └─HTTP超时──▶ unknown <span class="c">(人工核对,永不自动重试)</span></pre>
+
+    <h4>⑥ 下单请求 <span class="dir">— POST /equity/orders/market → 回执</span></h4>
+<pre class="code"><span class="c">## 请求</span>
+{ <span class="k">"ticker"</span>: <span class="s">"AAPL_US_EQ"</span>, <span class="k">"quantity"</span>: <span class="n">0.79</span> }   <span class="c"># 负数 = 卖出</span>
+<span class="c">## 响应(节选)</span>
+{ <span class="k">"id"</span>: <span class="n">31482067</span>, <span class="k">"status"</span>: <span class="s">"NEW"</span>, <span class="k">"ticker"</span>: <span class="s">"AAPL_US_EQ"</span>, <span class="k">"quantity"</span>: <span class="n">0.79</span> }</pre>
+  </div>
+</section>
+
+<script>
+// tabs
+document.querySelectorAll('nav button').forEach(b=>{
+  b.addEventListener('click',()=>{
+    document.querySelectorAll('nav button').forEach(x=>x.classList.remove('on'));
+    document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));
+    b.classList.add('on');
+    document.getElementById(b.dataset.t).classList.add('on');
+  });
+});
+
+// telegram confirm simulation
+const checks=[
+  '单笔 €150 ≤ 上限 €200','买入后 AAPL 占比 20% ≤ 15%+持仓豁免 25%',
+  '当日已实现亏损 −€23.40 > 熔断 −€100','当日下单 0 次 < 5 次',
+  '美股盘前,盘中执行队列排队中','可用现金 €2,150 ≥ €157.50',
+  'open_orders 无同向 AAPL 未成交单'
+];
+const ok=document.getElementById('btnOk'), no=document.getElementById('btnNo');
+ok.addEventListener('click',()=>{
+  ok.disabled=no.disabled=true;
+  const box=document.getElementById('msgRisk'), list=document.getElementById('riskList');
+  box.classList.remove('hidden'); list.textContent='🛡 风控校验 intent 7f3a…c21d\n';
+  checks.forEach((c,i)=>setTimeout(()=>{
+    const d=document.createElement('div'); d.className='pass'; d.textContent=c; list.appendChild(d);
+    if(i===checks.length-1) setTimeout(()=>document.getElementById('msgDone').classList.remove('hidden'),400);
+  }, 260*(i+1)));
+});
+no.addEventListener('click',()=>{
+  ok.disabled=no.disabled=true;
+  document.getElementById('msgSkip').classList.remove('hidden');
+});
+</script>
+</body>
+</html>

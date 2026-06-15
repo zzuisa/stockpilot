@@ -1,0 +1,92 @@
+# TimescaleDB — 对应说明书 §15 tsdb 服务(内存上限 1Gi, shared_buffers=256MB)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tsdb
+  namespace: stockpilot
+  labels:
+    app: tsdb
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate          # 单 PV,滚动更新会卡在双 Pod 抢卷
+  selector:
+    matchLabels:
+      app: tsdb
+  template:
+    metadata:
+      labels:
+        app: tsdb
+    spec:
+      containers:
+      - name: timescaledb
+        image: timescale/timescaledb:latest-pg16
+        args:
+          - postgres
+          - -c
+          - shared_buffers=256MB
+          - -c
+          - max_connections=50
+        ports:
+        - containerPort: 5432
+        env:
+        - name: POSTGRES_DB
+          value: stockpilot
+        - name: POSTGRES_USER
+          value: sp
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: stockpilot-secrets
+              key: DB_PASSWORD
+        - name: PGDATA
+          value: /var/lib/postgresql/data/pgdata
+        volumeMounts:
+        - name: tsdb-data
+          mountPath: /var/lib/postgresql/data
+        - name: shm
+          mountPath: /dev/shm
+        readinessProbe:
+          exec:
+            command: ["sh", "-c", "pg_isready -U sp -d stockpilot"]
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+        livenessProbe:
+          exec:
+            command: ["sh", "-c", "pg_isready -U sp -d stockpilot"]
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 5
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+      volumes:
+      - name: tsdb-data
+        persistentVolumeClaim:
+          claimName: stockpilot-tsdb-pvc
+      - name: shm
+        emptyDir:
+          medium: Memory
+          sizeLimit: 256Mi
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tsdb
+  namespace: stockpilot
+  labels:
+    app: tsdb
+spec:
+  # 数据库只在集群内访问,不开 NodePort
+  type: ClusterIP
+  selector:
+    app: tsdb
+  ports:
+  - port: 5432
+    targetPort: 5432

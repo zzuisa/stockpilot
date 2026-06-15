@@ -1,0 +1,10 @@
+__pycache__
+*.pyc
+*.pyo
+.pytest_cache
+tests/
+.git
+*.md
+# 前端：源码进 node 构建阶段，但不要把本地产物/依赖塞进 python 镜像层
+frontend/node_modules
+frontend/dist

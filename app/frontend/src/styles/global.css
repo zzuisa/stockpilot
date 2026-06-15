@@ -1,0 +1,177 @@
+:root {
+  --bg: #0c1117;
+  --panel: #121922;
+  --panel2: #0f151d;
+  --line: #1e2933;
+  --line2: #2a3845;
+  --amber: #e8a33d;
+  --amber-dim: #8a6526;
+  --up: #3dd68c;
+  --down: #f4604e;
+  --blue: #5ba8f5;
+  --text: #d9e0e8;
+  --muted: #7c8896;
+  --faint: #54616e;
+  --mono: 'IBM Plex Mono', monospace;
+  --sans: 'IBM Plex Sans', 'Noto Sans SC', sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+#app {
+  min-height: 100vh;
+}
+
+.wrap {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 14px 16px 60px;
+}
+
+/* 顶部品牌 */
+.logo {
+  font-family: var(--mono);
+  font-weight: 600;
+  font-size: 18px;
+  letter-spacing: 0.12em;
+  color: var(--amber);
+}
+.logo span {
+  color: var(--faint);
+}
+
+/* 通用工具类 */
+.mono {
+  font-family: var(--mono);
+}
+.muted {
+  color: var(--muted);
+}
+.faint {
+  color: var(--faint);
+}
+.up {
+  color: var(--up);
+}
+.down {
+  color: var(--down);
+}
+.amber {
+  color: var(--amber);
+}
+.right {
+  text-align: right;
+}
+.nowrap {
+  white-space: nowrap;
+}
+.flex {
+  display: flex;
+}
+.flex-center {
+  display: flex;
+  align-items: center;
+}
+.gap-6 {
+  gap: 6px;
+}
+.gap-8 {
+  gap: 8px;
+}
+.gap-10 {
+  gap: 10px;
+}
+.grow {
+  flex: 1;
+}
+.section-label {
+  font-size: 11px;
+  color: var(--faint);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+/* pipeline 进度条 */
+.pipe {
+  display: flex;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  overflow-x: auto;
+  background: var(--panel2);
+}
+.pipe .stage {
+  flex: 1;
+  min-width: 110px;
+  padding: 10px 12px;
+  border-right: 1px solid var(--line);
+  position: relative;
+}
+.pipe .stage:last-child {
+  border-right: none;
+}
+.pipe .stage .k {
+  font-size: 11px;
+  color: var(--faint);
+  letter-spacing: 0.06em;
+}
+.pipe .stage .v {
+  font-family: var(--mono);
+  font-size: 12px;
+  margin-top: 3px;
+  color: var(--muted);
+}
+.pipe .stage.ok .v {
+  color: var(--up);
+}
+.pipe .stage.fail .v {
+  color: var(--down);
+}
+.pipe .stage::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 2px;
+}
+.pipe .stage.ok::after {
+  background: var(--up);
+}
+.pipe .stage.fail::after {
+  background: var(--down);
+}
+.pipe .stage.run::after {
+  background: var(--amber);
+  animation: pulse 1.6s infinite;
+}
+@keyframes pulse {
+  50% {
+    opacity: 0.3;
+  }
+}
+
+/* 滚动条 */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--line2);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
