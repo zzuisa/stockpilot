@@ -1,0 +1,76 @@
+{
+  "uid": "sp-notify",
+  "title": "StockPilot · 推送监控",
+  "tags": ["stockpilot"],
+  "schemaVersion": 39,
+  "time": { "from": "now-7d", "to": "now" },
+  "refresh": "5m",
+  "panels": [
+    {
+      "id": 1, "type": "stat", "title": "24h 发送成功",
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "stockpilot-tsdb" },
+      "targets": [{
+        "refId": "A", "format": "table",
+        "rawSql": "SELECT count(*) FROM notify_log WHERE status='sent' AND ts > now() - interval '24 hours'"
+      }],
+      "fieldConfig": { "defaults": { "color": { "mode": "fixed", "fixedColor": "green" } }, "overrides": [] }
+    },
+    {
+      "id": 2, "type": "stat", "title": "24h 发送失败",
+      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "stockpilot-tsdb" },
+      "targets": [{
+        "refId": "A", "format": "table",
+        "rawSql": "SELECT count(*) FROM notify_log WHERE status='failed' AND ts > now() - interval '24 hours'"
+      }],
+      "fieldConfig": { "defaults": { "color": { "mode": "fixed", "fixedColor": "red" } }, "overrides": [] }
+    },
+    {
+      "id": 3, "type": "stat", "title": "24h 防重跳过",
+      "gridPos": { "h": 5, "w": 6, "x": 12, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "stockpilot-tsdb" },
+      "targets": [{
+        "refId": "A", "format": "table",
+        "rawSql": "SELECT count(*) FROM notify_log WHERE status='skipped' AND ts > now() - interval '24 hours'"
+      }]
+    },
+    {
+      "id": 4, "type": "stat", "title": "活跃路由数",
+      "gridPos": { "h": 5, "w": 6, "x": 18, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "stockpilot-tsdb" },
+      "targets": [{
+        "refId": "A", "format": "table",
+        "rawSql": "SELECT count(*) FROM notify_routes WHERE active"
+      }]
+    },
+    {
+      "id": 5, "type": "timeseries", "title": "推送时间线 (group × channel × 状态)",
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 5 },
+      "datasource": { "type": "postgres", "uid": "stockpilot-tsdb" },
+      "targets": [{
+        "refId": "A", "format": "time_series",
+        "rawSql": "SELECT date_trunc('hour', ts) AS \"time\", coalesce(group_id,'-') || '/' || channel || '/' || status AS metric, count(*)::float AS value FROM notify_log WHERE $__timeFilter(ts) GROUP BY 1,2 ORDER BY 1"
+      }],
+      "fieldConfig": { "defaults": { "custom": { "drawStyle": "bars", "fillOpacity": 60, "stacking": { "mode": "normal" } } }, "overrides": [] }
+    },
+    {
+      "id": 6, "type": "table", "title": "收件人覆盖表 (notify_routes)",
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 14 },
+      "datasource": { "type": "postgres", "uid": "stockpilot-tsdb" },
+      "targets": [{
+        "refId": "A", "format": "table",
+        "rawSql": "SELECT group_id, coalesce(symbol,'(组级)') AS symbol, channel, recipient, array_to_string(event_types, ',') AS events FROM notify_routes WHERE active ORDER BY group_id, symbol"
+      }]
+    },
+    {
+      "id": 7, "type": "table", "title": "最近推送日志",
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 14 },
+      "datasource": { "type": "postgres", "uid": "stockpilot-tsdb" },
+      "targets": [{
+        "refId": "A", "format": "table",
+        "rawSql": "SELECT ts, event_type, group_id, symbol, channel, recipient, status, left(coalesce(error_msg,''),60) AS error FROM notify_log ORDER BY ts DESC LIMIT 100"
+      }]
+    }
+  ]
+}

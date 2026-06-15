@@ -1,0 +1,56 @@
+{
+  "uid": "sp-account",
+  "title": "StockPilot · 账户复盘",
+  "tags": ["stockpilot"],
+  "schemaVersion": 39,
+  "time": { "from": "now-30d", "to": "now" },
+  "refresh": "5m",
+  "panels": [
+    {
+      "id": 1, "type": "timeseries", "title": "总资产曲线",
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "stockpilot-tsdb" },
+      "targets": [{
+        "refId": "A", "format": "time_series",
+        "rawSql": "SELECT ts AS \"time\", total AS \"总资产\", free_cash AS \"现金\" FROM account_snapshot WHERE $__timeFilter(ts) ORDER BY 1"
+      }]
+    },
+    {
+      "id": 2, "type": "timeseries", "title": "浮动盈亏 (ppl)",
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "stockpilot-tsdb" },
+      "targets": [{
+        "refId": "A", "format": "time_series",
+        "rawSql": "SELECT ts AS \"time\", ppl FROM account_snapshot WHERE $__timeFilter(ts) ORDER BY 1"
+      }]
+    },
+    {
+      "id": 3, "type": "table", "title": "当前持仓",
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 9 },
+      "datasource": { "type": "postgres", "uid": "stockpilot-tsdb" },
+      "targets": [{
+        "refId": "A", "format": "table",
+        "rawSql": "SELECT ticker, quantity, average_price, current_price, ppl FROM positions_snapshot WHERE ts = (SELECT max(ts) FROM positions_snapshot) ORDER BY ppl DESC"
+      }]
+    },
+    {
+      "id": 4, "type": "timeseries", "title": "月度分红 (EUR)",
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 9 },
+      "datasource": { "type": "postgres", "uid": "stockpilot-tsdb" },
+      "targets": [{
+        "refId": "A", "format": "time_series",
+        "rawSql": "SELECT date_trunc('month', paid_on) AS \"time\", coalesce(sum(amount_in_euro),0) AS \"分红\" FROM t212_dividends WHERE paid_on IS NOT NULL GROUP BY 1 ORDER BY 1"
+      }],
+      "fieldConfig": { "defaults": { "custom": { "drawStyle": "bars", "fillOpacity": 60 } }, "overrides": [] }
+    },
+    {
+      "id": 5, "type": "table", "title": "近期已实现订单 (T212)",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 18 },
+      "datasource": { "type": "postgres", "uid": "stockpilot-tsdb" },
+      "targets": [{
+        "refId": "A", "format": "table",
+        "rawSql": "SELECT date_created, ticker, type, status, filled_quantity, fill_price, filled_value FROM t212_orders ORDER BY date_created DESC LIMIT 50"
+      }]
+    }
+  ]
+}

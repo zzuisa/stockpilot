@@ -1,0 +1,83 @@
+# ★ Watchlist / Group / 收件人配置(说明书 §4,系统控制面)
+# 修改后执行: ./deploy.sh config  (重建 ConfigMap 并滚动重启 app)
+# 或调用 POST /api/v1/sync-yaml 重新加载
+
+# ─── 全局默认 ───
+defaults:
+  notify_channels: [telegram]          # telegram | email | both
+  telegram_chat_ids: ["${TELEGRAM_CHAT_ID}"]
+  email_recipients: []
+  news_sources: [finnhub, rss]
+  t212_community: true                 # 是否采集 T212 社区
+  community_priority: positive         # positive | negative | all
+  language: zh
+
+# ─── 分组定义 ───
+groups:
+
+  # ─────────────────── 核心持仓 ───────────────────
+  - id: core_holdings
+    name: "核心持仓"
+    description: "长期看好、重仓标的"
+    notify_channels: [telegram, email]
+    telegram_chat_ids:
+      - "${TELEGRAM_CHAT_ID}"
+    email_recipients:
+      - "ao@roguelife.de"
+    notify_on: [daily_report, signal, news_shock]
+    symbols:
+      - ticker: NVDA
+        t212_ticker: NVDA_US_EQ
+        tags: [ai, semiconductor]
+      - ticker: MSFT
+        t212_ticker: MSFT_US_EQ
+        tags: [cloud, ai]
+      - ticker: AAPL
+        t212_ticker: AAPL_US_EQ
+        tags: [consumer]
+
+  # ─────────────────── 短线观察 ───────────────────
+  - id: swing_watch
+    name: "短线观察"
+    description: "RSI/MACD 信号驱动,非持仓但关注中"
+    notify_channels: [telegram]
+    telegram_chat_ids:
+      - "${TELEGRAM_CHAT_ID}"
+    notify_on: [signal]
+    symbols:
+      - ticker: AMD
+        t212_ticker: AMD_US_EQ
+        tags: [semiconductor]
+      - ticker: TSLA
+        t212_ticker: TSLA_US_EQ
+        tags: [ev, meme]
+        community_priority: positive
+
+  # ─────────────────── 指数/ETF ───────────────────
+  - id: index_etf
+    name: "指数与 ETF"
+    description: "宏观参照,不交易"
+    notify_channels: [email]
+    email_recipients: ["ao@roguelife.de"]
+    notify_on: [daily_report]
+    t212_community: false
+    symbols:
+      - ticker: VUAA
+        t212_ticker: VUAA_DE_EQ
+        yf_symbol: VUAA.DE
+        tags: [etf, sp500]
+      - ticker: QQQ
+        t212_ticker: null
+        tags: [etf, nasdaq]
+
+  # ─────────────────── 德股 ───────────────────
+  - id: de_stocks
+    name: "德股"
+    notify_channels: [telegram]
+    telegram_chat_ids: ["${TELEGRAM_CHAT_ID}"]
+    notify_on: [daily_report, signal, news_shock]
+    symbols:
+      - ticker: 2DG
+        t212_ticker: 2DG_DE_EQ
+        yf_symbol: 2DG.SG
+        tags: [gaming, de]

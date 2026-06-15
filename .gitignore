@@ -1,0 +1,49 @@
+# ───── 密钥 / 环境变量（切勿提交真实凭据） ─────
+secrets.env
+.env
+.env.*
+!secrets.env.example
+
+# ───── Python ─────
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# ───── 前端（Vue / Vite） ─────
+node_modules/
+app/frontend/dist/
+app/frontend/.vite/
+*.local
+
+# ───── 构建 / 运行产物 ─────
+*.tar
+*.tgz
+*.log
+stockpilot-app.tar
+
+# ───── 数据库 / 备份转储 ─────
+*.dump
+*.sql.gz
+backups/
+
+# ───── 操作系统 / 编辑器 ─────
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# 本地接口测试集合（含真实密钥，不提交）
+*.postman_collection.json

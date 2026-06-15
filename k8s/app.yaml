@@ -1,0 +1,88 @@
+# StockPilot 应用 — 采集 + 分析 + bot + 邮件,单容器(说明书 §15 app,内存上限 700Mi)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: stockpilot-app
+  namespace: stockpilot
+  labels:
+    app: stockpilot-app
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate          # APScheduler/Telegram polling 不能双实例并存
+  selector:
+    matchLabels:
+      app: stockpilot-app
+  template:
+    metadata:
+      labels:
+        app: stockpilot-app
+    spec:
+      containers:
+      - name: app
+        image: docker.io/library/stockpilot-app:v1
+        imagePullPolicy: Never          # 镜像由 deploy.sh 导入本机 containerd,不走外网
+        ports:
+        - containerPort: 8000
+        envFrom:
+        - secretRef:
+            name: stockpilot-secrets
+        env:
+        - name: TZ
+          value: Europe/Berlin
+        - name: ROOT_PATH                # nginx 子路径前缀,FastAPI 用于生成 docs 链接
+          value: /stockpilot
+        - name: DB_HOST
+          value: tsdb
+        - name: DB_PORT
+          value: "5432"
+        - name: DB_NAME
+          value: stockpilot
+        - name: DB_USER
+          value: sp
+        - name: WATCHLIST_PATH
+          value: /app/config/watchlist.yaml
+        volumeMounts:
+        - name: watchlist-config
+          mountPath: /app/config
+          readOnly: true
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 60
+          periodSeconds: 30
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "700Mi"
+            cpu: "1500m"
+      volumes:
+      - name: watchlist-config
+        configMap:
+          name: stockpilot-watchlist
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: stockpilot-app
+  namespace: stockpilot
+  labels:
+    app: stockpilot-app
+spec:
+  type: NodePort
+  selector:
+    app: stockpilot-app
+  ports:
+  - port: 8000
+    targetPort: 8000
+    nodePort: 30810

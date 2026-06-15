@@ -1,0 +1,2947 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>StockPilot · 管理</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js"></script>
+<style>
+:root{
+  --bg:#0C1117;--panel:#121922;--panel2:#0F151D;
+  --line:#1E2933;--line2:#2A3845;
+  --amber:#E8A33D;--amber-dim:#8A6526;
+  --up:#3DD68C;--down:#F4604E;--blue:#5BA8F5;
+  --text:#E8EEF4;--muted:#B0BEC9;--faint:#8FA0AE;
+  --mono:'IBM Plex Mono',monospace;
+  --sans:'IBM Plex Sans','Noto Sans SC',sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14px;line-height:1.5}
+.wrap{max-width:1100px;margin:0 auto;padding:16px 14px 60px}
+
+/* header */
+header{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;padding:6px 0 14px;border-bottom:1px solid var(--line)}
+.logo{font-family:var(--mono);font-weight:600;font-size:18px;letter-spacing:.12em;color:var(--amber)}
+.logo span{color:var(--faint)}
+.env{font-family:var(--mono);font-size:11px;padding:2px 8px;border:1px solid var(--amber-dim);color:var(--amber);border-radius:3px}
+.clock{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--muted)}
+
+/* pipeline */
+.pipe{display:flex;gap:0;margin:14px 0 18px;border:1px solid var(--line);border-radius:6px;overflow-x:auto;background:var(--panel2)}
+.stage{flex:1;min-width:100px;padding:10px 12px;border-right:1px solid var(--line);position:relative}
+.stage:last-child{border-right:none}
+.stage .k{font-size:11px;color:var(--faint);letter-spacing:.06em}
+.stage .v{font-family:var(--mono);font-size:12px;margin-top:3px;color:var(--muted)}
+.stage.ok .v{color:var(--up)}
+.stage.fail .v{color:var(--down)}
+.stage.ok::after,.stage.fail::after,.stage.run::after{content:"";position:absolute;left:0;top:0;width:100%;height:2px}
+.stage.ok::after{background:var(--up)}
+.stage.fail::after{background:var(--down)}
+.stage.run::after{background:var(--amber);animation:pulse 1.6s infinite}
+@keyframes pulse{50%{opacity:.3}}
+
+/* tabs */
+nav{display:flex;gap:4px;margin-bottom:16px;overflow-x:auto}
+nav button{font-family:var(--sans);font-size:13px;padding:8px 14px;background:none;border:1px solid var(--line);color:var(--muted);border-radius:5px;cursor:pointer;white-space:nowrap}
+nav button.on{color:var(--amber);border-color:var(--amber-dim);background:rgba(232,163,61,.06)}
+
+/* panels */
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px;margin-bottom:14px}
+.panel h3{font-size:11px;color:var(--faint);font-weight:500;letter-spacing:.1em;margin-bottom:12px;text-transform:uppercase}
+.panel h4{font-size:12px;color:var(--muted);font-weight:500;margin:14px 0 8px;display:flex;align-items:center;gap:8px}
+.panel h4:first-child{margin-top:0}
+
+/* split layout */
+.split{display:grid;grid-template-columns:220px 1fr;gap:14px;align-items:start}
+@media(max-width:680px){.split{grid-template-columns:1fr}}
+
+/* group list */
+.group-item{padding:9px 12px;border-radius:6px;cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:space-between;gap:6px}
+.group-item:hover{background:rgba(255,255,255,.04)}
+.group-item.sel{background:rgba(232,163,61,.08);color:var(--amber)}
+.group-item .gname{font-weight:500}
+.group-item .gcnt{font-size:11px;color:var(--faint);font-family:var(--mono)}
+
+/* tags / chips */
+.chip{display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:12px;
+  background:var(--panel2);border:1px solid var(--line2);border-radius:4px;padding:3px 8px;margin:3px 3px 3px 0}
+.chip .del{color:var(--faint);cursor:pointer;font-size:14px;line-height:1;padding:0 1px}
+.chip .del:hover{color:var(--down)}
+
+/* table */
+table{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:12.5px}
+th{text-align:left;color:var(--faint);font-weight:500;font-size:11px;padding:6px 8px;border-bottom:1px solid var(--line);letter-spacing:.05em}
+td{padding:7px 8px;border-bottom:1px solid var(--panel2);vertical-align:middle}
+tr:last-child td{border-bottom:none}
+.r{text-align:right}
+.muted{color:var(--muted)}
+
+/* inputs */
+input,select{background:var(--panel2);border:1px solid var(--line2);color:var(--text);font-family:var(--mono);
+  font-size:13px;padding:7px 10px;border-radius:5px;width:100%;outline:none}
+input:focus,select:focus{border-color:var(--amber-dim)}
+.field{margin-bottom:10px}
+.field label{display:block;font-size:12px;color:var(--faint);margin-bottom:4px;letter-spacing:.04em}
+.row{display:flex;gap:8px;align-items:flex-end}
+.row input{flex:1}
+
+/* buttons */
+.btn{font-family:var(--sans);font-size:13px;padding:7px 14px;border-radius:5px;border:none;cursor:pointer;white-space:nowrap}
+.btn-amber{background:rgba(232,163,61,.15);color:var(--amber);border:1px solid var(--amber-dim)}
+.btn-amber:hover{background:rgba(232,163,61,.22)}
+.btn-ghost{background:transparent;color:var(--muted);border:1px solid var(--line)}
+.btn-ghost:hover{color:var(--text);border-color:var(--line2)}
+.btn-danger{background:rgba(244,96,78,.12);color:var(--down);border:1px solid rgba(244,96,78,.3)}
+.btn-danger:hover{background:rgba(244,96,78,.2)}
+.btn-sm{padding:4px 10px;font-size:12px}
+.btn:disabled{opacity:.4;cursor:default}
+
+/* status */
+.dot{width:7px;height:7px;border-radius:50%;display:inline-block}
+.dot-ok{background:var(--up)}
+.dot-fail{background:var(--down)}
+.dot-muted{background:var(--faint)}
+.badge{font-family:var(--mono);font-size:11px;padding:2px 7px;border-radius:3px}
+.badge-ok{background:rgba(61,214,140,.12);color:var(--up)}
+.badge-fail{background:rgba(244,96,78,.12);color:var(--down)}
+.badge-muted{background:var(--panel2);color:var(--muted)}
+.badge-am{background:rgba(232,163,61,.12);color:var(--amber)}
+
+/* toast */
+.toast{position:fixed;bottom:24px;right:24px;font-size:13px;font-family:var(--mono);
+  padding:10px 16px;border-radius:7px;z-index:1000;pointer-events:none;
+  transition:opacity .25s;border:1px solid}
+.toast.ok{background:#0a1f12;border-color:rgba(61,214,140,.4);color:var(--up)}
+.toast.err{background:#1f0a09;border-color:rgba(244,96,78,.4);color:var(--down)}
+
+/* health grid */
+.hgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px}
+.hcard{background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:10px 12px}
+.hcard .hk{font-size:11px;color:var(--faint);letter-spacing:.06em}
+.hcard .hv{font-family:var(--mono);font-size:14px;margin-top:4px}
+
+/* inline add row */
+.add-row{display:flex;gap:6px;margin-top:8px}
+.add-row input{flex:1;font-size:12px;padding:5px 8px}
+
+/* log status */
+.s-sent{color:var(--up)}.s-failed{color:var(--down)}.s-skipped{color:var(--amber)}
+
+/* modal */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:500;display:flex;align-items:center;justify-content:center;padding:16px}
+.modal{background:var(--panel);border:1px solid var(--line2);border-radius:10px;padding:22px;width:440px;max-width:100%}
+.modal h2{font-size:15px;font-weight:600;margin-bottom:14px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+/* buy/sell toggle */
+.side-tab{display:inline-block;padding:6px 18px;border-radius:4px;cursor:pointer;font-size:13px;border:1px solid var(--line);color:var(--muted)}
+.side-tab.on-buy{background:rgba(61,214,140,.1);color:var(--up);border-color:rgba(61,214,140,.3)}
+.side-tab.on-sell{background:rgba(244,96,78,.1);color:var(--down);border-color:rgba(244,96,78,.3)}
+/* env badge */
+.env-demo{font-family:var(--mono);font-size:11px;padding:2px 8px;border-radius:3px;background:rgba(91,168,245,.1);color:var(--blue);border:1px solid rgba(91,168,245,.3)}
+.env-live{font-family:var(--mono);font-size:11px;padding:2px 8px;border-radius:3px;background:rgba(244,96,78,.1);color:var(--down);border:1px solid rgba(244,96,78,.3)}
+/* activity */
+.act-panel{background:var(--panel2);border-radius:6px;padding:12px;margin:2px 0 6px}
+.act-item{padding:7px 0;border-bottom:1px solid var(--line);font-size:12px}
+.act-item:last-child{border-bottom:none}
+/* order type tabs */
+.otype-tab{display:inline-block;padding:5px 14px;border-radius:4px;cursor:pointer;font-size:12px;border:1px solid var(--line);color:var(--muted);margin-right:4px}
+.otype-tab.on{background:rgba(232,163,61,.1);color:var(--amber);border-color:var(--amber-dim)}
+/* band price grid */
+.band-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+/* symbol detail drawer */
+.sym-drawer{background:var(--panel2);border-radius:6px;padding:12px 14px;margin:2px 0 4px}
+.sym-sel td{background:rgba(232,163,61,.03)}
+.ind-row{display:flex;align-items:center;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--line);font-size:12px}
+.ind-row:last-child{border-bottom:none}
+.ind-row>span:first-child{color:var(--faint)}
+/* intent status */
+.s-pending{color:var(--amber)}.s-confirmed{color:var(--blue)}.s-executed{color:var(--up)}
+.s-expired{color:var(--faint)}.s-rejected,.s-failed{color:var(--down)}.s-skipped{color:var(--faint)}
+/* filter pills */
+.pill{display:inline-block;padding:4px 12px;border-radius:4px;cursor:pointer;font-size:12px;
+  border:1px solid var(--line);color:var(--muted);margin-right:4px;font-family:var(--mono)}
+.pill.on{color:var(--amber);border-color:var(--amber-dim);background:rgba(232,163,61,.06)}
+/* rsi mini bar */
+.rsi-val{font-family:var(--mono);font-size:12px}
+</style>
+</head>
+<body>
+<div class="wrap" x-data="app()" x-init="init()">
+
+<header>
+  <div class="logo">STOCK<span>/</span>PILOT</div>
+  <div class="env">MANAGE</div>
+  <template x-if="health">
+    <span style="font-size:12px;color:var(--muted);font-family:var(--mono)">
+      <span :class="health.db?'dot dot-ok':'dot dot-fail'" style="display:inline-block"></span>
+      DB &nbsp;
+      <span :class="health.scheduler?'dot dot-ok':'dot dot-fail'" style="display:inline-block"></span>
+      Scheduler
+    </span>
+  </template>
+  <div class="clock" x-text="clock"></div>
+</header>
+
+<!-- Pipeline bar -->
+<div class="pipe">
+  <template x-for="s in pipeline" :key="s.k">
+    <div class="stage" :class="s.cls">
+      <div class="k" x-text="s.k"></div>
+      <div class="v" x-text="s.v"></div>
+    </div>
+  </template>
+</div>
+
+<nav>
+  <button :class="tab==='overview'?'on':''" @click="tab='overview';loadOverview()">概览</button>
+  <button :class="tab==='t212'?'on':''" @click="tab='t212';loadT212Tab()">T212 行情</button>
+  <button :class="tab==='groups'?'on':''" @click="tab='groups';loadGroups()">分组管理</button>
+  <button :class="tab==='routes'?'on':''" @click="tab='routes';loadRoutes()">推送路由</button>
+  <button :class="tab==='log'?'on':''" @click="tab='log';loadLog()">推送日志</button>
+  <button :class="tab==='jobs'?'on':''" @click="tab='jobs';loadJobs()">任务</button>
+  <button :class="tab==='intents'?'on':''" @click="tab='intents';loadIntentsTab()">意向单</button>
+</nav>
+
+<!-- ════ 概览 ════ -->
+<div x-show="tab==='overview'">
+  <div class="panel">
+    <h3>系统集成</h3>
+    <div class="hgrid" x-show="health">
+      <template x-for="[k,v] in Object.entries(health?.integrations||{})" :key="k">
+        <div class="hcard">
+          <div class="hk" x-text="k.toUpperCase()"></div>
+          <div class="hv" :class="v?'':''" style="margin-top:4px">
+            <span :class="v?'badge badge-ok':'badge badge-fail'" x-text="v?'✓ 已连接':'✗ 未配置'"></span>
+          </div>
+        </div>
+      </template>
+    </div>
+  </div>
+
+  <div class="panel" x-show="summary">
+    <h3>账户快照</h3>
+    <table>
+      <thead><tr><th>项目</th><th class="r">数值</th></tr></thead>
+      <tbody>
+        <tr x-show="summary?.account"><td>总资产</td><td class="r" x-text="fmt(summary?.account?.total,'€')"></td></tr>
+        <tr x-show="summary?.account"><td>可用现金</td><td class="r" x-text="fmt(summary?.account?.free_cash,'€')"></td></tr>
+        <tr x-show="summary?.account"><td>浮动盈亏</td><td class="r" :class="(summary?.account?.ppl||0)>=0?'':''" style="color:var(--muted)" x-text="fmt(summary?.account?.ppl,'€',true)"></td></tr>
+        <tr><td>待确认意向单</td><td class="r"><span :class="summary?.pending_intents?.length?'badge badge-am':'badge badge-muted'" x-text="summary?.pending_intents?.length||0"></span></td></tr>
+        <tr><td>24h 信号</td><td class="r"><span class="badge badge-muted" x-text="summary?.signals_24h?.length||0"></span></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="panel" x-show="summary?.positions?.length">
+    <h3>持仓</h3>
+    <table>
+      <thead><tr><th>TICKER</th><th class="r">数量</th><th class="r">均价</th><th class="r">现价</th><th class="r">盈亏</th></tr></thead>
+      <tbody>
+        <template x-for="p in summary?.positions||[]" :key="p.ticker">
+          <tr>
+            <td x-text="p.ticker"></td>
+            <td class="r muted" x-text="p.quantity"></td>
+            <td class="r muted" x-text="p.avg_price?.toFixed(2)"></td>
+            <td class="r" x-text="p.current_price?.toFixed(2)"></td>
+            <td class="r" :style="p.ppl>=0?'color:var(--up)':'color:var(--down)'" x-text="fmt(p.ppl,'€',true)"></td>
+          </tr>
+        </template>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ════ 分组管理 ════ -->
+<div x-show="tab==='groups'">
+  <div class="split">
+
+    <!-- Left: group list -->
+    <div>
+      <div class="panel" style="padding:10px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;padding:0 4px">
+          <span style="font-size:11px;color:var(--faint);letter-spacing:.08em">分组列表</span>
+          <button class="btn btn-sm btn-amber" @click="openNewGroup()">+ 新建</button>
+        </div>
+        <template x-if="groups.length===0">
+          <div style="color:var(--faint);font-size:12px;padding:8px 4px">暂无分组</div>
+        </template>
+        <template x-for="g in groups" :key="g.id">
+          <div class="group-item" :class="selGroup?.id===g.id?'sel':''" @click="selGroup=g;loadGroupDetail(g.id)">
+            <div>
+              <div class="gname" x-text="g.name"></div>
+              <div style="font-size:11px;color:var(--faint);font-family:var(--mono)" x-text="g.id"></div>
+            </div>
+            <div class="gcnt" x-text="(g.symbol_count??g.symbols?.length??0)+'只'"></div>
+          </div>
+        </template>
+
+        <div style="border-top:1px solid var(--line);margin-top:10px;padding-top:10px;display:flex;flex-direction:column;gap:6px">
+          <button class="btn btn-ghost btn-sm" @click="syncYaml()" style="width:100%">⟳ 从 YAML 同步</button>
+          <button class="btn btn-ghost btn-sm" @click="exportYaml()" style="width:100%">↓ 导出 YAML</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right: group detail -->
+    <div>
+      <!-- New group form -->
+      <div class="panel" x-show="showNewGroup">
+        <h3>新建分组</h3>
+        <div class="field"><label>ID（英文小写/下划线）</label><input x-model="newG.id" placeholder="core_holdings"></div>
+        <div class="field"><label>名称</label><input x-model="newG.name" placeholder="核心持仓"></div>
+        <div class="field"><label>描述</label><input x-model="newG.description" placeholder="长期持有的核心股票"></div>
+        <div style="display:flex;gap:8px;margin-top:4px">
+          <button class="btn btn-amber" @click="createGroup()" :disabled="!newG.id||!newG.name">创建</button>
+          <button class="btn btn-ghost" @click="showNewGroup=false">取消</button>
+        </div>
+      </div>
+
+      <!-- Group detail -->
+      <template x-if="selGroup && detail">
+        <div>
+          <!-- 基本信息 -->
+          <div class="panel">
+            <h3 style="display:flex;align-items:center;justify-content:space-between">
+              <span>分组信息</span>
+              <span style="font-family:var(--mono);font-size:11px;color:var(--amber)" x-text="selGroup.id"></span>
+            </h3>
+            <div class="field"><label>名称</label><input x-model="editG.name"></div>
+            <div class="field"><label>描述</label><input x-model="editG.description"></div>
+            <div style="display:flex;gap:8px">
+              <button class="btn btn-amber btn-sm" @click="saveGroup()">保存</button>
+              <button class="btn btn-danger btn-sm" @click="deleteGroup()">删除组</button>
+            </div>
+          </div>
+
+          <!-- 标的 -->
+          <div class="panel">
+            <h4>
+              标的
+              <span class="badge badge-muted" x-text="detail.symbols?.length||0"></span>
+              <span style="flex:1"></span>
+              <button class="btn btn-sm btn-amber" @click="pushGroup(selGroup.id,selGroup.name)"
+                      :disabled="pushingGroup===selGroup.id"
+                      x-text="pushingGroup===selGroup.id?'推送中…':'一键推送'"></button>
+            </h4>
+            <table>
+              <thead>
+                <tr>
+                  <th style="width:88px">SYMBOL</th>
+                  <th style="width:58px;text-align:center">RSI</th>
+                  <th style="width:72px;text-align:center">MACD</th>
+                  <th style="width:72px;text-align:center">情绪</th>
+                  <th style="width:52px;text-align:center">信号</th>
+                  <th class="r">操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                <template x-for="s in detail.symbols||[]" :key="s.symbol">
+                  <tr>
+                    <td><span class="badge badge-am" x-text="s.symbol"></span></td>
+                    <!-- RSI -->
+                    <td style="text-align:center">
+                      <span x-show="symData[s.symbol]?.rsi!=null"
+                            class="rsi-val"
+                            :style="symData[s.symbol]?.rsi<30?'color:var(--up)':symData[s.symbol]?.rsi>70?'color:var(--down)':'color:var(--muted)'"
+                            x-text="symData[s.symbol]?.rsi?.toFixed(0)"></span>
+                      <span x-show="symData[s.symbol]?.rsi==null" style="color:var(--faint);font-size:11px">—</span>
+                    </td>
+                    <!-- MACD -->
+                    <td style="text-align:center">
+                      <span x-show="symData[s.symbol]?.macd_cross===1" class="badge badge-ok" style="font-size:10px">金叉↑</span>
+                      <span x-show="symData[s.symbol]?.macd_cross===-1" class="badge badge-fail" style="font-size:10px">死叉↓</span>
+                      <span x-show="symData[s.symbol]?.macd_cross===0" class="badge badge-muted" style="font-size:10px">持平</span>
+                      <span x-show="symData[s.symbol]?.macd_cross==null" style="color:var(--faint);font-size:11px">—</span>
+                    </td>
+                    <!-- 情绪 -->
+                    <td style="text-align:center">
+                      <span x-show="symData[s.symbol]?.combined!=null"
+                            :class="sentClass(Math.round(symData[s.symbol]?.combined??0))"
+                            style="font-size:11px"
+                            x-text="(symData[s.symbol]?.combined>=0?'+':'')+symData[s.symbol]?.combined?.toFixed(1)"></span>
+                      <span x-show="symData[s.symbol]?.combined==null" style="color:var(--faint);font-size:11px">—</span>
+                    </td>
+                    <!-- 信号 -->
+                    <td style="text-align:center">
+                      <span x-show="symData[s.symbol]?.sig_cnt" class="badge badge-am" style="font-size:10px" x-text="symData[s.symbol]?.sig_cnt"></span>
+                      <span x-show="!symData[s.symbol]?.sig_cnt" style="color:var(--faint);font-size:11px">—</span>
+                    </td>
+                    <td class="r" @click.stop>
+                      <div style="display:flex;gap:4px;justify-content:flex-end">
+                        <button class="btn btn-ghost btn-sm" @click="openCopyToGroup(s)" title="复制/移动到其他分组">→组</button>
+                        <button class="btn btn-danger btn-sm" @click="removeSymbol(s.symbol)">✕</button>
+                      </div>
+                    </td>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
+            <div class="add-row" style="margin-top:12px">
+              <input x-model="newSym.symbol" placeholder="SYMBOL (如 NVDA)" style="text-transform:uppercase" @keyup.enter="addSymbol()">
+              <input x-model="newSym.t212_ticker" placeholder="T212 Ticker (可选)">
+              <button class="btn btn-amber btn-sm" @click="addSymbol()" :disabled="!newSym.symbol">+ 添加</button>
+            </div>
+          </div>
+
+          <!-- Telegram 接收者 -->
+          <div class="panel">
+            <h4>
+              Telegram 接收者
+              <span class="badge badge-muted" x-text="tgList.length"></span>
+            </h4>
+            <div style="min-height:28px">
+              <template x-if="tgList.length===0">
+                <span style="font-size:12px;color:var(--faint)">暂无接收者</span>
+              </template>
+              <template x-for="(id,i) in tgList" :key="i">
+                <span class="chip">
+                  <span x-text="id"></span>
+                  <span class="del" @click="removeTg(i)">×</span>
+                </span>
+              </template>
+            </div>
+            <div class="add-row">
+              <input x-model="newTg" placeholder="Chat ID (如 6584405861)" @keyup.enter="addTg()">
+              <button class="btn btn-amber btn-sm" @click="addTg()" :disabled="!newTg">+ 添加</button>
+            </div>
+            <div style="margin-top:10px;display:flex;align-items:center;gap:8px">
+              <span style="font-size:12px;color:var(--faint)">推送事件:</span>
+              <label style="font-size:12px;cursor:pointer"><input type="checkbox" x-model="tgEvents" value="daily_report" style="width:auto"> 日报</label>
+              <label style="font-size:12px;cursor:pointer"><input type="checkbox" x-model="tgEvents" value="signal" style="width:auto"> 信号</label>
+              <label style="font-size:12px;cursor:pointer"><input type="checkbox" x-model="tgEvents" value="order_result" style="width:auto"> 成交</label>
+              <button class="btn btn-ghost btn-sm" @click="saveTg()" style="margin-left:auto">保存</button>
+            </div>
+          </div>
+
+          <!-- Email 接收者 -->
+          <div class="panel">
+            <h4>
+              Email 接收者
+              <span class="badge badge-muted" x-text="emailList.length"></span>
+            </h4>
+            <div style="min-height:28px">
+              <template x-if="emailList.length===0">
+                <span style="font-size:12px;color:var(--faint)">暂无接收者</span>
+              </template>
+              <template x-for="(addr,i) in emailList" :key="i">
+                <span class="chip">
+                  <span x-text="addr"></span>
+                  <span class="del" @click="removeEmail(i)">×</span>
+                </span>
+              </template>
+            </div>
+            <div class="add-row">
+              <input x-model="newEmail" placeholder="user@example.com" type="email" @keyup.enter="addEmail()">
+              <button class="btn btn-amber btn-sm" @click="addEmail()" :disabled="!newEmail">+ 添加</button>
+            </div>
+            <div style="margin-top:10px;display:flex;align-items:center;gap:8px">
+              <span style="font-size:12px;color:var(--faint)">推送事件:</span>
+              <label style="font-size:12px;cursor:pointer"><input type="checkbox" x-model="emailEvents" value="daily_report" style="width:auto"> 日报</label>
+              <label style="font-size:12px;cursor:pointer"><input type="checkbox" x-model="emailEvents" value="signal" style="width:auto"> 信号</label>
+              <button class="btn btn-ghost btn-sm" @click="saveEmail()" style="margin-left:auto">保存</button>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <template x-if="!selGroup && !showNewGroup">
+        <div class="panel" style="color:var(--faint);font-size:13px;text-align:center;padding:32px">
+          ← 选择左侧分组开始管理
+        </div>
+      </template>
+    </div>
+  </div>
+</div>
+
+<!-- ════ 推送路由 ════ -->
+<div x-show="tab==='routes'">
+  <div class="panel">
+    <h3 style="display:flex;align-items:center;gap:10px">
+      推送路由
+      <span class="badge badge-muted" x-text="routes.length+' 条'"></span>
+      <span style="flex:1"></span>
+      <select x-model="routeFilter" @change="loadRoutes()" style="width:auto;font-size:12px;padding:4px 8px">
+        <option value="">全部分组</option>
+        <template x-for="g in groups" :key="g.id">
+          <option :value="g.id" x-text="g.name+'('+g.id+')'"></option>
+        </template>
+      </select>
+    </h3>
+    <table>
+      <thead><tr><th>分组</th><th>标的</th><th>渠道</th><th>接收者</th><th>事件类型</th></tr></thead>
+      <tbody>
+        <template x-for="r in routes" :key="r.id">
+          <tr>
+            <td><span class="badge badge-muted" x-text="r.group_id"></span></td>
+            <td x-text="r.symbol||'(组级)'"></td>
+            <td>
+              <span :class="r.channel==='telegram'?'badge badge-ok':'badge badge-am'" x-text="r.channel"></span>
+            </td>
+            <td class="muted" style="font-family:var(--mono);font-size:12px" x-text="r.recipient"></td>
+            <td style="font-family:var(--mono);font-size:11px;color:var(--faint)" x-text="(r.event_types||[]).join(', ')"></td>
+          </tr>
+        </template>
+        <tr x-show="routes.length===0">
+          <td colspan="5" style="color:var(--faint);text-align:center;padding:16px">无路由数据</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ════ 推送日志 ════ -->
+<div x-show="tab==='log'">
+  <div class="panel">
+    <h3 style="display:flex;align-items:center;gap:10px">
+      推送日志
+      <span class="badge badge-muted" x-text="logs.length+' 条'"></span>
+      <span style="flex:1"></span>
+      <select x-model="logHours" @change="loadLog()" style="width:auto;font-size:12px;padding:4px 8px">
+        <option value="6">近 6h</option>
+        <option value="24" selected>近 24h</option>
+        <option value="72">近 3d</option>
+        <option value="168">近 7d</option>
+      </select>
+    </h3>
+    <table>
+      <thead><tr><th>时间</th><th>事件</th><th>分组</th><th>标的</th><th>渠道</th><th>接收者</th><th>状态</th></tr></thead>
+      <tbody>
+        <template x-for="(l,i) in logs" :key="i">
+          <tr>
+            <td class="muted" style="font-family:var(--mono);font-size:11px;white-space:nowrap" x-text="fmtTs(l.ts)"></td>
+            <td style="font-size:12px" x-text="l.event_type"></td>
+            <td><span class="badge badge-muted" x-text="l.group_id||'—'"></span></td>
+            <td x-text="l.symbol||'—'"></td>
+            <td x-text="l.channel"></td>
+            <td class="muted" style="font-family:var(--mono);font-size:11px;max-width:160px;overflow:hidden;text-overflow:ellipsis" x-text="l.recipient"></td>
+            <td><span :class="'s-'+l.status" x-text="l.status"></span>
+              <span x-show="l.error_msg" style="font-size:11px;color:var(--down)" x-text="' '+l.error_msg?.slice(0,40)"></span>
+            </td>
+          </tr>
+        </template>
+        <tr x-show="logs.length===0">
+          <td colspan="7" style="color:var(--faint);text-align:center;padding:16px">该时段无推送记录</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ════ 任务 ════ -->
+<div x-show="tab==='jobs'">
+  <!-- 任务目录 + 手动触发 -->
+  <div class="panel">
+    <h3 style="margin-bottom:12px">任务目录 <span style="font-weight:400;color:var(--faint);font-size:11px">· 点击立即执行</span></h3>
+    <table>
+      <thead><tr><th>任务</th><th>说明</th><th>默认调度</th><th>下次运行</th><th class="r">操作</th></tr></thead>
+      <tbody>
+        <template x-for="job in jobCatalog" :key="job.id">
+          <tr>
+            <td>
+              <div style="font-weight:500;font-size:13px" x-text="job.label"></div>
+              <div style="font-size:10px;color:var(--faint);font-family:var(--mono)" x-text="job.id"></div>
+            </td>
+            <td style="font-size:12px;color:var(--muted);max-width:220px" x-text="job.desc"></td>
+            <td style="font-size:12px;color:var(--faint)" x-text="job.schedule"></td>
+            <td style="font-family:var(--mono);font-size:11px;color:var(--blue)"
+                x-text="jobNextRun(job.id)"></td>
+            <td class="r">
+              <button class="btn btn-ghost btn-sm" @click="triggerJob(job.id)"
+                      :disabled="runningJob===job.id" x-show="job.manual">
+                <span x-show="runningJob===job.id" style="color:var(--amber)">⟳ </span>
+                <span x-show="runningJob!==job.id">执行</span>
+              </button>
+            </td>
+          </tr>
+        </template>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- 最近运行记录 -->
+  <div class="panel">
+    <h3 style="display:flex;align-items:center;gap:8px">
+      最近运行记录
+      <button class="btn btn-ghost btn-sm" @click="loadJobs()" style="margin-left:auto">⟳ 刷新</button>
+    </h3>
+    <table>
+      <thead><tr><th>任务</th><th>开始时间</th><th>耗时</th><th>状态</th><th>详情</th></tr></thead>
+      <tbody>
+        <template x-for="(r,i) in recentRuns" :key="i">
+          <tr>
+            <td>
+              <div style="font-size:13px" x-text="JOB_LABELS[r.job]||r.job"></div>
+              <div style="font-size:10px;color:var(--faint);font-family:var(--mono)" x-text="r.job"></div>
+            </td>
+            <td class="muted" style="font-family:var(--mono);font-size:11px" x-text="fmtTs(r.started_at)"></td>
+            <td class="muted" style="font-family:var(--mono);font-size:11px" x-text="duration(r.started_at,r.finished_at)"></td>
+            <td>
+              <span :class="r.status==='ok'?'badge badge-ok':r.status==='running'?'badge badge-am':'badge badge-fail'"
+                    x-text="r.status==='ok'?'成功':r.status==='running'?'运行中':r.status==='skipped'?'跳过':'失败'"></span>
+            </td>
+            <td style="font-size:12px;color:var(--muted);max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
+                x-text="r.detail||'—'"></td>
+          </tr>
+        </template>
+        <tr x-show="recentRuns.length===0">
+          <td colspan="5" style="color:var(--faint);text-align:center;padding:16px">暂无运行记录</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ════ T212 行情 ════ -->
+<div x-show="tab==='t212'">
+
+  <!-- 搜索栏 + 环境标记 -->
+  <div class="panel">
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+      <!-- 视图切换 -->
+      <div style="flex:0 0 auto">
+        <div style="font-size:11px;color:var(--faint);margin-bottom:4px">视图</div>
+        <div style="display:flex;gap:4px">
+          <button class="btn btn-sm" :class="t212View==='positions'?'btn-amber':'btn-ghost'"
+            @click="t212View='positions';showPositions()">持仓</button>
+          <button class="btn btn-sm" :class="t212View==='watchlist'?'btn-amber':'btn-ghost'"
+            @click="t212View='watchlist';showWatchlist()">自选</button>
+          <button class="btn btn-sm" :class="t212View==='search'?'btn-amber':'btn-ghost'"
+            @click="t212View='search'">搜索</button>
+        </div>
+      </div>
+      <!-- 搜索框 (仅搜索视图显示) -->
+      <div x-show="t212View==='search'" style="flex:1;min-width:200px">
+        <div style="font-size:11px;color:var(--faint);margin-bottom:4px">搜索标的</div>
+        <div style="display:flex;gap:6px">
+          <input x-model="searchQ" @keyup.enter="doSearch()" placeholder="输入 Ticker 或公司名称…" style="flex:1">
+          <button class="btn btn-amber" @click="doSearch()" :disabled="searchLoading||!searchQ.trim()">
+            <span x-show="searchLoading">⟳</span><span x-show="!searchLoading">搜索</span>
+          </button>
+          <button class="btn btn-ghost" x-show="t212Instruments.length" @click="clearSearch()">清空</button>
+        </div>
+      </div>
+      <!-- 刷新持仓 -->
+      <button x-show="t212View==='positions'" class="btn btn-ghost btn-sm" @click="showPositions()" style="align-self:flex-end">⟳ 刷新</button>
+    </div>
+    <div style="margin-top:10px;display:flex;align-items:center;gap:8px">
+      <span :class="t212Env==='live'?'env-live':'env-demo'" x-text="(t212Env||'demo').toUpperCase()+' 模式'"></span>
+      <span x-show="t212Env!=='live'" style="font-size:11px;color:var(--faint)">订单均为模拟盘</span>
+    </div>
+  </div>
+
+  <!-- 自选管理（仅自选视图显示添加栏） -->
+  <div class="panel" x-show="t212View==='watchlist'" style="padding:12px 14px">
+    <div style="display:flex;gap:6px;align-items:center">
+      <span style="font-size:11px;color:var(--faint);white-space:nowrap">添加自选:</span>
+      <input x-model="wlAddQ" placeholder="搜索并添加 (如 NVDA)" style="flex:1;font-size:12px;padding:5px 8px"
+             @input="wlSearchDebounce()" @keyup.enter="wlPickFirst()">
+      <span style="font-size:11px;color:var(--faint)" x-show="t212CustomWl.length" x-text="t212CustomWl.length+'只自选'"></span>
+    </div>
+    <!-- 搜索建议 -->
+    <div x-show="wlSuggestions.length" style="background:var(--panel2);border:1px solid var(--line);border-radius:5px;margin-top:4px;max-height:160px;overflow-y:auto">
+      <template x-for="s in wlSuggestions" :key="s.ticker">
+        <div style="padding:7px 12px;cursor:pointer;font-size:12px;display:flex;align-items:center;gap:8px"
+             @click="wlAddItem(s)" class="group-item">
+          <span class="badge badge-am" x-text="s.ticker.split('_')[0]"></span>
+          <span style="color:var(--muted)" x-text="s.shortName||s.name"></span>
+        </div>
+      </template>
+    </div>
+  </div>
+
+  <!-- 挂单面板 -->
+  <div class="panel" x-show="openOrders.length > 0 || openOrdersLoading">
+    <h3 style="display:flex;align-items:center;gap:8px">
+      当前挂单
+      <span class="badge badge-am" x-text="openOrders.length"></span>
+      <button class="btn btn-ghost btn-sm" style="margin-left:auto" @click="loadOpenOrders()">
+        <span x-show="openOrdersLoading" style="color:var(--amber)">⟳</span>
+        <span x-show="!openOrdersLoading">⟳ 刷新</span>
+      </button>
+    </h3>
+    <table>
+      <thead><tr><th>Ticker</th><th>类型</th><th>方向</th><th class="r">数量</th><th class="r">价格</th><th>有效期</th><th>状态</th><th class="r">操作</th></tr></thead>
+      <tbody>
+        <template x-for="o in openOrders" :key="o.id">
+          <tr>
+            <td><span class="badge badge-am" x-text="(o.ticker||'').split('_')[0]"></span></td>
+            <td style="font-size:12px;color:var(--muted)" x-text="orderTypeLabel(o.type||o.orderType)"></td>
+            <td>
+              <span :class="(o.quantity||0)>=0?'badge badge-ok':'badge badge-fail'"
+                    x-text="(o.quantity||0)>=0?'买入':'卖出'"></span>
+            </td>
+            <td class="r" style="font-family:var(--mono);font-size:12px" x-text="Math.abs(o.quantity||0)"></td>
+            <td class="r" style="font-family:var(--mono);font-size:12px;color:var(--amber)"
+                x-text="(o.limitPrice||o.stopPrice||'—')"></td>
+            <td style="font-size:11px;color:var(--faint)" x-text="o.timeValidity||'—'"></td>
+            <td><span class="badge badge-muted" x-text="o.status||'OPEN'"></span></td>
+            <td class="r">
+              <button class="btn btn-danger btn-sm" @click="cancelOrder(o.id)">取消</button>
+            </td>
+          </tr>
+        </template>
+        <tr x-show="openOrdersLoading">
+          <td colspan="8" style="color:var(--faint);text-align:center;padding:12px">加载中…</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- 标的列表 -->
+  <div class="panel" x-show="t212Instruments.length">
+    <h3 style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+      <span x-text="t212View==='search'?(searchQ?'搜索结果':'搜索标的'):t212View==='watchlist'?'自选':'持仓'"></span>
+      <span class="badge badge-muted" x-text="t212Instruments.length"></span>
+      <!-- 自选：刷新状态 -->
+      <span x-show="t212View==='watchlist'" style="margin-left:auto;display:flex;align-items:center;gap:8px">
+        <span x-show="wlRefreshing" style="font-size:11px;color:var(--faint)">⟳ 刷新中…</span>
+        <span x-show="!wlRefreshing && wlLastRefresh" style="font-size:11px;color:var(--faint)"
+              x-text="'更新: '+wlLastRefresh"></span>
+        <button class="btn btn-sm btn-ghost" @click="loadWlQuotes()" :disabled="wlRefreshing">↻ 刷新</button>
+      </span>
+    </h3>
+    <table>
+      <thead><tr>
+        <th>Ticker</th>
+        <th>名称</th>
+        <th x-show="t212View!=='search'">现价</th>
+        <th x-show="t212View==='positions'||t212View==='watchlist'">持仓</th>
+        <th x-show="t212View==='positions'||t212View==='watchlist'" style="text-align:right">盈亏 €</th>
+        <th x-show="t212View==='watchlist'" style="text-align:right">盈亏 %</th>
+        <th x-show="t212View==='search'">类型</th>
+        <th class="r">操作</th>
+      </tr></thead>
+      <tbody>
+        <template x-for="inst in t212Instruments" :key="inst.ticker">
+          <tr @click="t212View!=='search'&&openSymDetail(inst)" style="cursor:pointer"
+              :class="expandedSym===inst.ticker.split('_')[0]?'sym-sel':''">
+            <td><span class="badge badge-am" x-text="inst.ticker.split('_')[0]"></span></td>
+            <td style="color:var(--muted);font-size:12px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
+                x-text="inst.shortName||inst.name||inst.ticker"></td>
+            <!-- 现价 -->
+            <td x-show="t212View!=='search'" style="font-family:var(--mono);font-size:12px">
+              <template x-if="t212View==='watchlist'">
+                <span>
+                  <span x-text="(wlQuotes[inst.ticker]?.current_price != null)
+                    ? (wlQuotes[inst.ticker].current_price.toFixed(2)+' '+(wlQuotes[inst.ticker].currency||'')+(wlQuotes[inst.ticker].source==='db_close'?' 收盘':''))
+                    : '—'"
+                    :style="wlQuotes[inst.ticker]?.current_price==null?'color:var(--faint)':''"></span>
+                </span>
+              </template>
+              <template x-if="t212View==='positions'">
+                <span x-text="inst.currentPrice ? inst.currentPrice.toFixed(2)+' '+(inst.currency||'') : '—'"></span>
+              </template>
+            </td>
+            <!-- 持仓数量 -->
+            <td x-show="t212View==='positions'||t212View==='watchlist'" style="font-family:var(--mono);font-size:12px">
+              <template x-if="t212View==='watchlist'">
+                <span x-show="(wlQuotes[inst.ticker]?.quantity||0)>0"
+                      class="badge badge-ok"
+                      x-text="(wlQuotes[inst.ticker]?.quantity||0)+' 股'"></span>
+              </template>
+              <template x-if="t212View==='positions'">
+                <span x-show="inst.quantity" class="badge badge-ok" x-text="inst.quantity+' 股'"></span>
+              </template>
+              <span x-show="t212View==='watchlist' ? !(wlQuotes[inst.ticker]?.quantity>0) : !inst.quantity"
+                    style="color:var(--faint)">—</span>
+            </td>
+            <!-- 盈亏 € -->
+            <td x-show="t212View==='positions'||t212View==='watchlist'" class="r"
+                style="font-family:var(--mono);font-size:12px">
+              <template x-if="t212View==='watchlist'">
+                <span :style="(wlQuotes[inst.ticker]?.ppl??null)!==null ? ((wlQuotes[inst.ticker].ppl>=0)?'color:var(--up)':'color:var(--down)') : 'color:var(--faint)'"
+                      x-text="(wlQuotes[inst.ticker]?.ppl??null)!==null
+                        ? ((wlQuotes[inst.ticker].ppl>=0?'+':'')+wlQuotes[inst.ticker].ppl.toFixed(2)+' '+(wlQuotes[inst.ticker].pnl_currency||'EUR'))
+                        : '—'"></span>
+              </template>
+              <template x-if="t212View==='positions'">
+                <span :style="(inst.ppl||0)>=0?'color:var(--up)':'color:var(--down)'"
+                      x-text="inst.ppl!=null?((inst.ppl>=0?'+':'')+inst.ppl.toFixed(2)+' '+inst.pnlCurrency):'—'"></span>
+              </template>
+            </td>
+            <!-- 盈亏 % (仅自选) -->
+            <td x-show="t212View==='watchlist'" class="r" style="font-family:var(--mono);font-size:12px">
+              <span :style="(wlQuotes[inst.ticker]?.ppl_pct??null)!==null ? ((wlQuotes[inst.ticker].ppl_pct>=0)?'color:var(--up)':'color:var(--down)') : 'color:var(--faint)'"
+                    x-text="(wlQuotes[inst.ticker]?.ppl_pct??null)!==null
+                      ? ((wlQuotes[inst.ticker].ppl_pct>=0?'+':'')+wlQuotes[inst.ticker].ppl_pct.toFixed(2)+'%')
+                      : '—'"></span>
+            </td>
+            <!-- 类型 (搜索视图) -->
+            <td x-show="t212View==='search'" style="font-size:11px;color:var(--faint)" x-text="inst.type||'STOCK'"></td>
+            <td class="r" @click.stop>
+              <div style="display:flex;gap:4px;justify-content:flex-end;flex-wrap:wrap">
+                <button class="btn btn-sm" style="background:rgba(61,214,140,.1);color:var(--up);border:1px solid rgba(61,214,140,.25)"
+                  @click="openOrder(inst,'buy')">买入</button>
+                <button class="btn btn-sm btn-danger" x-show="t212Positions[inst.ticker]"
+                  @click="openOrder(inst,'sell')">卖出</button>
+                <button class="btn btn-sm btn-amber" @click="openBandModal(inst)"
+                  title="波段交易：同时设置买入限价和卖出限价">波段</button>
+                <button class="btn btn-sm btn-ghost" @click="addToGroupPrompt(inst)">+ 分组</button>
+                <!-- 搜索结果：加/移自选 -->
+                <template x-if="t212View==='search'">
+                  <button class="btn btn-sm"
+                    :style="t212CustomWl.some(w=>w.ticker===inst.ticker)
+                      ? 'background:rgba(61,214,140,.12);color:var(--up);border:1px solid rgba(61,214,140,.3)'
+                      : 'background:transparent;color:var(--muted);border:1px solid var(--line)'"
+                    @click="t212CustomWl.some(w=>w.ticker===inst.ticker) ? wlRemoveItem(inst.ticker) : wlAddItem(inst)"
+                    x-text="t212CustomWl.some(w=>w.ticker===inst.ticker) ? '✓ 自选' : '+ 自选'">
+                  </button>
+                </template>
+                <button class="btn btn-sm btn-ghost" :class="activityTicker===inst.ticker?'on':''"
+                  @click="toggleActivity(inst.ticker)">动态</button>
+                <button class="btn btn-sm btn-danger" x-show="t212View==='watchlist'"
+                  @click="wlRemoveItem(inst.ticker)">移除</button>
+              </div>
+            </td>
+          </tr>
+        </template>
+        <!-- ── 标的详情抽屉(T212持仓/自选,在 x-for 外) ── -->
+        <tr x-show="expandedSym!=null">
+          <td colspan="99" style="padding:0 0 6px">
+            <div class="sym-drawer">
+              <!-- 标题栏 -->
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+                <span style="font-size:13px;color:var(--amber);font-weight:500" x-text="expandedSym"></span>
+                <span style="font-size:11px;color:var(--faint)" x-text="expandedSymTicker"></span>
+                <button class="btn btn-sm btn-ghost" style="margin-left:auto" @click="closeSymDetail()">✕ 关闭</button>
+              </div>
+              <div x-show="symDetailLoading" style="color:var(--faint);font-size:12px;padding:8px 0">加载中…</div>
+              <div x-show="!symDetailLoading">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+                  <!-- 技术指标 -->
+                  <div>
+                    <div style="font-size:11px;color:var(--faint);margin-bottom:8px;letter-spacing:.06em">技术指标</div>
+                    <template x-if="symDetail?.ind">
+                      <div>
+                        <div class="ind-row"><span>RSI(14)</span>
+                          <span :style="symDetail.ind.rsi<30?'color:var(--up)':symDetail.ind.rsi>70?'color:var(--down)':'color:var(--muted)'"
+                                x-text="symDetail.ind.rsi?.toFixed(1)??'—'"></span></div>
+                        <div class="ind-row"><span>MACD</span>
+                          <span :class="symDetail.ind.macd_cross===1?'badge badge-ok':symDetail.ind.macd_cross===-1?'badge badge-fail':'badge badge-muted'"
+                                x-text="symDetail.ind.macd_cross===1?'金叉':symDetail.ind.macd_cross===-1?'死叉':'中性'"></span></div>
+                        <div class="ind-row"><span>SMA20</span><span class="muted" x-text="symDetail.ind.sma20?.toFixed(2)??'—'"></span></div>
+                        <div class="ind-row"><span>SMA50</span><span class="muted" x-text="symDetail.ind.sma50?.toFixed(2)??'—'"></span></div>
+                        <div class="ind-row"><span>SMA200</span><span class="muted" x-text="symDetail.ind.sma200?.toFixed(2)??'—'"></span></div>
+                        <div class="ind-row"><span>ATR</span><span class="muted" x-text="symDetail.ind.atr?.toFixed(2)??'—'"></span></div>
+                        <div class="ind-row"><span>量比</span><span class="muted" x-text="symDetail.ind.vol_ratio?.toFixed(2)??'—'"></span></div>
+                      </div>
+                    </template>
+                    <div x-show="!symDetail?.ind" style="font-size:11px;color:var(--faint)">无数据，先运行 signals 任务</div>
+                  </div>
+                  <!-- 情绪分析 -->
+                  <div>
+                    <div style="font-size:11px;color:var(--faint);margin-bottom:8px;letter-spacing:.06em">情绪分析 (近7天)</div>
+                    <template x-if="symDetail?.sent">
+                      <div>
+                        <div class="ind-row"><span>新闻情绪</span>
+                          <span :class="sentClass(Math.round(symDetail.sent.sent_avg??0))"
+                                x-text="(symDetail.sent.sent_avg>=0?'+':'')+symDetail.sent.sent_avg?.toFixed(2)"></span></div>
+                        <div class="ind-row"><span>社区情绪</span>
+                          <span :class="sentClass(Math.round(symDetail.sent.comm_avg??0))"
+                                x-text="(symDetail.sent.comm_avg>=0?'+':'')+symDetail.sent.comm_avg?.toFixed(2)"></span></div>
+                        <div class="ind-row"><span>社区信号</span><span class="badge badge-muted" x-text="symDetail.sent.label||'—'"></span></div>
+                        <div class="ind-row"><span>新闻条数</span><span class="muted" x-text="symDetail.sent.news_cnt||0"></span></div>
+                        <div class="ind-row"><span>社区帖数</span><span class="muted" x-text="symDetail.sent.comm_cnt||0"></span></div>
+                        <div class="ind-row"><span>社区正向</span><span style="color:var(--up)" x-text="symDetail.sent.comm_pos_cnt||0"></span></div>
+                        <div class="ind-row"><span>社区负向</span><span style="color:var(--down)" x-text="symDetail.sent.comm_neg_cnt||0"></span></div>
+                      </div>
+                    </template>
+                    <div x-show="!symDetail?.sent" style="font-size:11px;color:var(--faint)">无数据，先运行 sentiment 任务</div>
+                    <!-- top news -->
+                    <template x-if="symDetail?.sent?.news?.length">
+                      <div style="margin-top:10px;border-top:1px solid var(--line);padding-top:8px">
+                        <div style="font-size:11px;color:var(--faint);margin-bottom:5px">最近新闻</div>
+                        <template x-for="(n,i) in (symDetail.sent.news||[]).slice(0,3)" :key="i">
+                          <div style="font-size:11px;color:var(--muted);margin-bottom:4px;display:flex;gap:5px;align-items:flex-start">
+                            <span :class="sentClass(n.score)" x-text="sentLabel(n.score)" style="flex-shrink:0;font-size:10px"></span>
+                            <a :href="n.url" target="_blank" rel="noopener"
+                               style="color:var(--text);text-decoration:none;line-height:1.4"
+                               x-text="n.title"></a>
+                          </div>
+                        </template>
+                      </div>
+                    </template>
+                  </div>
+                </div>
+
+                <!-- ── 实时行情 ── -->
+                <div style="margin-top:14px;border-top:1px solid var(--line);padding-top:10px">
+                  <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+                    <span style="font-size:11px;color:var(--faint);letter-spacing:.05em">实时行情</span>
+                    <span style="color:var(--amber);font-size:9px;animation:rtpulse 1.5s infinite">●</span>
+                    <span style="font-size:11px;color:var(--muted)" x-text="rt.quote.last ? rt.quote.last.toFixed(2) : '—'"></span>
+                    <span x-show="rt.quote.change_pct!=null"
+                          :style="(rt.quote.change_pct??0)>=0?'color:var(--up);font-size:11px':'color:var(--down);font-size:11px'"
+                          x-text="((rt.quote.change_pct??0)>=0?'+':'')+rt.quote.change_pct?.toFixed(2)+'%'"></span>
+                    <span x-show="rt.quote.source"
+                          style="font-size:10px;margin-left:2px"
+                          :style="rt.quote.source==='t212_position'?'color:var(--up)':'color:var(--faint)'"
+                          x-text="rt.quote.source==='t212_position'?'● 实时':rt.quote.source==='yfinance'?'~15min':''"></span>
+                    <!-- 时间窗口 -->
+                    <div style="margin-left:auto;display:flex;gap:3px">
+                      <template x-for="m in [1,3,5,15,30]" :key="m">
+                        <button @click="setChartWindow(m);_startSymChart()"
+                                :class="rtChart.window===m?'btn btn-amber btn-sm':'btn btn-ghost btn-sm'"
+                                style="padding:1px 6px;font-size:10px" x-text="m+'m'"></button>
+                      </template>
+                    </div>
+                  </div>
+                  <!-- 图表 + 成交流 -->
+                  <div style="display:grid;grid-template-columns:1fr 195px;gap:10px;height:230px">
+                    <canvas id="sym-chart-canvas" style="width:100%;height:230px;border-radius:4px;display:block"></canvas>
+                    <!-- 成交流 -->
+                    <div style="display:flex;flex-direction:column;border:1px solid var(--line);border-radius:4px;overflow:hidden">
+                      <div style="padding:4px 8px;font-size:10px;color:var(--faint);border-bottom:1px solid var(--line);
+                                  display:flex;justify-content:space-between;flex-shrink:0">
+                        <span>成交流</span>
+                        <span style="color:var(--muted)" x-text="rt.trades.length+'笔'"></span>
+                      </div>
+                      <!-- 买卖压力条 -->
+                      <div style="padding:4px 8px;border-bottom:1px solid var(--line);flex-shrink:0">
+                        <div style="height:5px;border-radius:3px;background:rgba(239,68,68,.28);overflow:hidden">
+                          <div :style="'width:'+rtBuyPct()+'%;height:100%;background:rgba(34,197,94,.6);transition:width .5s'"></div>
+                        </div>
+                        <div style="display:flex;justify-content:space-between;font-size:9px;margin-top:3px">
+                          <span style="color:var(--up)" x-text="'▲ '+rtBuyPct()+'%'"></span>
+                          <span style="color:var(--faint)" x-text="rtFmtVol(rt.buyVol5+rt.sellVol5)+' 股'"></span>
+                          <span style="color:var(--down)" x-text="(100-rtBuyPct())+'% ▼'"></span>
+                        </div>
+                      </div>
+                      <!-- 逐笔成交 -->
+                      <div style="flex:1;overflow-y:auto">
+                        <div x-show="rt.trades.length===0"
+                             style="padding:16px 8px;color:var(--faint);font-size:10px;text-align:center;line-height:1.9">
+                          等待成交…<br>15:30–22:00 盘中有效
+                        </div>
+                        <template x-for="(t, i) in rt.trades.slice(0, 100)" :key="i">
+                          <div style="display:grid;grid-template-columns:52px 58px 1fr;
+                                      padding:2px 8px;font-size:10px;font-variant-numeric:tabular-nums;
+                                      border-bottom:1px solid rgba(255,255,255,.025)"
+                               :style="t.v>=500?'background:rgba(255,200,0,.05)':''">
+                            <span style="color:var(--faint)"
+                                  x-text="new Date(t.t).toLocaleTimeString('en',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false})"></span>
+                            <span :style="t.d>0?'color:var(--up)':t.d<0?'color:var(--down)':'color:var(--muted)'"
+                                  x-text="t.p.toFixed(2)"></span>
+                            <span style="text-align:right"
+                                  :style="t.v>=500?'color:var(--amber);font-weight:600':'color:var(--muted)'"
+                                  x-text="rtFmtVol(t.v)"></span>
+                          </div>
+                        </template>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <!-- /实时行情 -->
+
+                <!-- ── 量化交易 ── -->
+                <div style="margin-top:14px;border-top:1px solid var(--line);padding-top:10px">
+                  <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+                    <span style="font-size:11px;color:var(--faint);letter-spacing:.05em">量化交易</span>
+                    <span x-show="quant.status?.running" class="badge badge-ok" style="font-size:10px">运行中</span>
+                    <span x-show="quant.status && !quant.status.running" class="badge badge-muted" style="font-size:10px">已停止</span>
+                    <span x-show="quant.status?.env" class="badge" style="font-size:10px"
+                          :class="quant.status?.env==='live'?'badge-fail':'badge-am'"
+                          x-text="quant.status?.env==='live'?'LIVE 真实账户':'DEMO 模拟'"></span>
+                    <span x-show="quant.status?.error" style="font-size:10px;color:var(--down)" x-text="quant.status?.error"></span>
+                  </div>
+                  <div style="display:grid;grid-template-columns:240px 1fr 230px;gap:12px">
+                    <!-- 参数 -->
+                    <div>
+                      <div style="font-size:10px;color:var(--faint);margin-bottom:6px">策略参数 (循环波段)</div>
+                      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+                        <div class="field"><label style="font-size:10px">盈利目标 %</label>
+                          <input type="number" step="0.1" x-model="quant.form.profit_pct" style="font-size:12px;padding:3px 6px" :disabled="quant.status?.running"></div>
+                        <div class="field"><label style="font-size:10px">硬止损 %</label>
+                          <input type="number" step="0.1" x-model="quant.form.stop_loss" style="font-size:12px;padding:3px 6px" :disabled="quant.status?.running"></div>
+                        <div class="field"><label style="font-size:10px">买入比例 %</label>
+                          <input type="number" step="1" min="1" max="100" x-model="quant.form.budget_ratio" style="font-size:12px;padding:3px 6px" :disabled="quant.status?.running"></div>
+                        <div class="field"><label style="font-size:10px">卖出比例 %</label>
+                          <input type="number" step="1" min="1" max="100" x-model="quant.form.sell_ratio" style="font-size:12px;padding:3px 6px" :disabled="quant.status?.running"></div>
+                        <div class="field"><label style="font-size:10px">RSI 买入阈值</label>
+                          <input type="number" x-model="quant.form.rsi_buy" style="font-size:12px;padding:3px 6px" :disabled="quant.status?.running"></div>
+                        <div class="field"><label style="font-size:10px">单笔上限 €</label>
+                          <input type="number" x-model="quant.form.budget_eur" placeholder="0=不限" style="font-size:12px;padding:3px 6px" :disabled="quant.status?.running"></div>
+                        <div class="field"><label style="font-size:10px">检查间隔 s</label>
+                          <input type="number" x-model="quant.form.interval" style="font-size:12px;padding:3px 6px" :disabled="quant.status?.running"></div>
+                        <div class="field"><label style="font-size:10px">每日最大笔数</label>
+                          <input type="number" x-model="quant.form.max_trades_day" style="font-size:12px;padding:3px 6px" :disabled="quant.status?.running"></div>
+                      </div>
+                      <div style="margin-top:8px;display:flex;gap:6px">
+                        <button x-show="!quant.status?.running" class="btn btn-amber btn-sm"
+                                :disabled="quant.busy" @click="startQuant()">▶ 启动策略</button>
+                        <button x-show="quant.status?.running" class="btn btn-danger btn-sm"
+                                :disabled="quant.busy" @click="stopQuant()">■ 停止策略</button>
+                      </div>
+                      <div style="font-size:9px;color:var(--faint);margin-top:6px;line-height:1.5">
+                        空仓: RSI&lt;阈值 且 MACD&gt;0 → 买入X%现金<br>
+                        持仓: 现价≥均价+盈利目标% → 卖出X%持仓<br>
+                        循环直到手动停止 / 每日熔断
+                      </div>
+                    </div>
+                    <!-- 运行状态 -->
+                    <div>
+                      <div style="font-size:10px;color:var(--faint);margin-bottom:6px">运行状态</div>
+                      <template x-if="quant.status?.running">
+                        <div>
+                          <div class="ind-row"><span>持仓</span>
+                            <span :class="quant.status.holding?'badge badge-ok':'badge badge-muted'"
+                                  x-text="quant.status.holding ? (quant.status.quantity?.toFixed(4)+'股 @ '+quant.status.avg_price?.toFixed(2)) : '空仓'"></span></div>
+                          <div class="ind-row"><span>现价 / 浮盈</span>
+                            <span x-show="quant.status.holding && quant.status.gain_pct!=null"
+                                  :style="quant.status.gain_pct>=0?'color:var(--up)':'color:var(--down)'"
+                                  x-text="quant.status.last_price?.toFixed(2)+' ('+(quant.status.gain_pct>=0?'+':'')+quant.status.gain_pct?.toFixed(2)+'% / 目标'+quant.status.params?.profit_pct+'%)'"></span>
+                            <span x-show="!quant.status.holding" class="muted" x-text="quant.status.last_price?.toFixed(2)||'—'"></span></div>
+                          <div class="ind-row"><span>tick RSI</span>
+                            <span x-text="quant.status.indicators?.rsi ?? '积累中 '+(quant.status.indicators?.ticks??0)+'/29'"
+                                  :style="quant.status.indicators?.rsi<35?'color:var(--up)':quant.status.indicators?.rsi>65?'color:var(--down)':'color:var(--muted)'"></span></div>
+                          <div class="ind-row"><span>tick MACD</span>
+                            <span :style="(quant.status.indicators?.macd_diff??0)>0?'color:var(--up)':'color:var(--down)'"
+                                  x-text="quant.status.indicators?.macd_diff!=null?(quant.status.indicators.macd_diff>=0?'+':'')+quant.status.indicators.macd_diff.toFixed(4):'—'"></span></div>
+                          <div class="ind-row"><span>今日笔数</span>
+                            <span class="muted" x-text="quant.status.trades_today+' / '+quant.status.params?.max_trades_day"></span></div>
+                          <div class="ind-row"><span>累计盈亏</span>
+                            <span :style="(quant.status.total_pnl??0)>=0?'color:var(--up)':'color:var(--down)'"
+                                  x-text="(quant.status.total_pnl>=0?'+':'')+quant.status.total_pnl?.toFixed(2)"></span></div>
+                          <div class="ind-row" x-show="quant.status.last_action"><span>最近动作</span>
+                            <span class="muted" style="font-size:10px" x-text="quant.status.last_action"></span></div>
+                        </div>
+                      </template>
+                      <div x-show="!quant.status?.running" style="font-size:11px;color:var(--faint);padding:8px 0">
+                        策略未运行。配置参数后点击「启动策略」，引擎将按 tick 指标自动买卖。
+                      </div>
+                    </div>
+                    <!-- 成交记录 -->
+                    <div>
+                      <div style="font-size:10px;color:var(--faint);margin-bottom:6px">最近成交
+                        <span style="color:var(--muted)" x-text="'('+quant.trades.length+')'"></span></div>
+                      <div style="max-height:180px;overflow-y:auto;border:1px solid var(--line);border-radius:4px">
+                        <div x-show="quant.trades.length===0" style="padding:12px 8px;font-size:10px;color:var(--faint);text-align:center">暂无成交</div>
+                        <template x-for="(t,i) in quant.trades" :key="i">
+                          <div style="display:grid;grid-template-columns:32px 1fr 56px 52px;gap:4px;padding:3px 8px;font-size:10px;
+                                      font-variant-numeric:tabular-nums;border-bottom:1px solid rgba(255,255,255,.025)">
+                            <span :style="t.side==='buy'?'color:var(--up)':'color:var(--down)'" x-text="t.side==='buy'?'买':'卖'"></span>
+                            <span class="muted" x-text="quantReasonLabel(t.reason)+' @ '+t.price?.toFixed(2)"></span>
+                            <span style="text-align:right;color:var(--faint)" x-text="t.quantity?.toFixed(3)"></span>
+                            <span style="text-align:right" x-show="t.pnl!=null"
+                                  :style="t.pnl>=0?'color:var(--up)':'color:var(--down)'"
+                                  x-text="(t.pnl>=0?'+':'')+t.pnl?.toFixed(2)"></span>
+                          </div>
+                        </template>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <!-- /量化交易 -->
+
+              </div>
+            </div>
+          </td>
+        </tr>
+
+        <!-- 动态展开行(在 x-for 外,避免 Alpine x-for 单根元素限制) -->
+        <tr x-show="activityTicker !== null">
+          <td colspan="99" style="padding:4px 0 8px">
+            <div class="act-panel" x-show="activityLoading" style="color:var(--faint);font-size:12px">加载中…</div>
+            <div class="act-panel" x-show="!activityLoading && activity">
+              <!-- 标题栏 -->
+              <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+                <span style="font-size:12px;color:var(--amber);font-weight:500" x-text="activityTicker?.split('_')[0]+' 动态'"></span>
+                <span style="font-size:11px;color:var(--faint)">已跟踪分组:</span>
+                <template x-if="activity?.tracking_groups?.length">
+                  <template x-for="gid in activity.tracking_groups" :key="gid">
+                    <span class="badge badge-ok" x-text="gid"></span>
+                  </template>
+                </template>
+                <span x-show="!activity?.tracking_groups?.length" style="font-size:12px;color:var(--faint)">未跟踪</span>
+                <button class="btn btn-sm btn-amber" style="margin-left:auto"
+                  @click="addToGroupPrompt(t212Instruments.find(x=>x.ticker===activityTicker)||{ticker:activityTicker})">+ 加入分组</button>
+                <button class="btn btn-sm btn-ghost" @click="activityTicker=null;activity=null">✕ 关闭</button>
+              </div>
+              <!-- 新闻 + 社区双栏 -->
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+                <div>
+                  <div style="font-size:11px;color:var(--faint);margin-bottom:6px;letter-spacing:.06em">
+                    新闻 <span class="badge badge-muted" x-text="activity?.news?.length||0"></span>
+                  </div>
+                  <template x-if="!activity?.news?.length">
+                    <div style="font-size:12px;color:var(--faint)">暂无新闻（运行 job_news 后填充）</div>
+                  </template>
+                  <template x-for="(n,i) in activity?.news||[]" :key="i">
+                    <div class="act-item">
+                      <div style="display:flex;align-items:flex-start;gap:5px;margin-bottom:2px">
+                        <span :class="sentClass(n.sentiment)" x-text="sentLabel(n.sentiment)" style="flex-shrink:0;font-size:10px"></span>
+                        <a :href="n.url" target="_blank" rel="noopener"
+                           style="color:var(--text);text-decoration:none;font-size:12px;line-height:1.4"
+                           x-text="n.title"></a>
+                      </div>
+                      <div style="font-size:11px;color:var(--faint)" x-text="(n.source||'')+' · '+fmtTs(n.published)"></div>
+                    </div>
+                  </template>
+                </div>
+                <div>
+                  <div style="font-size:11px;color:var(--faint);margin-bottom:6px;letter-spacing:.06em">
+                    T212 社区 <span class="badge badge-muted" x-text="activity?.community?.length||0"></span>
+                  </div>
+                  <template x-if="!activity?.community?.length">
+                    <div style="font-size:12px;color:var(--faint)">暂无社区帖子（运行 job_community 后填充）</div>
+                  </template>
+                  <template x-for="(p,i) in activity?.community||[]" :key="i">
+                    <div class="act-item">
+                      <div style="display:flex;align-items:center;gap:5px;margin-bottom:2px">
+                        <span :class="sentClass(p.sentiment)" x-text="sentLabel(p.sentiment)" style="font-size:10px"></span>
+                        <span style="font-size:11px;color:var(--faint)" x-text="p.author"></span>
+                        <span x-show="p.likes>0" style="font-size:11px;color:var(--amber)" x-text="'♥ '+p.likes"></span>
+                      </div>
+                      <div style="font-size:12px;color:var(--muted);line-height:1.4" x-text="p.content"></div>
+                      <div style="font-size:11px;color:var(--faint);margin-top:2px" x-text="fmtTs(p.published)"></div>
+                    </div>
+                  </template>
+                </div>
+              </div>
+            </div>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="panel" x-show="!t212Instruments.length" style="color:var(--faint);text-align:center;padding:32px;font-size:13px">
+    <span x-show="t212View==='positions'">暂无持仓（demo 账户初始为空）</span>
+    <span x-show="t212View==='watchlist'">自选列表为空，在上方搜索添加标的</span>
+    <span x-show="t212View==='search'">输入关键词搜索 T212 可交易标的</span>
+  </div>
+</div>
+
+<!-- ════ 意向单 ════ -->
+<div x-show="tab==='intents'">
+  <div class="panel">
+    <h3 style="display:flex;align-items:center;gap:10px">
+      意向单历史
+      <span class="badge badge-muted" x-text="intents.length+'条'"></span>
+      <span style="flex:1"></span>
+      <button class="btn btn-ghost btn-sm" @click="loadIntents()">⟳ 刷新</button>
+    </h3>
+    <div style="margin-bottom:14px">
+      <span class="pill" :class="intentStatus===''?'on':''" @click="intentStatus='';loadIntents()">全部</span>
+      <span class="pill" :class="intentStatus==='pending'?'on':''" @click="intentStatus='pending';loadIntents()">待确认</span>
+      <span class="pill" :class="intentStatus==='confirmed'?'on':''" @click="intentStatus='confirmed';loadIntents()">已确认</span>
+      <span class="pill" :class="intentStatus==='executed'?'on':''" @click="intentStatus='executed';loadIntents()">已执行</span>
+      <span class="pill" :class="intentStatus==='expired'?'on':''" @click="intentStatus='expired';loadIntents()">已过期</span>
+      <span class="pill" :class="intentStatus==='rejected'?'on':''" @click="intentStatus='rejected';loadIntents()">已拒绝</span>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>触发时间</th>
+          <th>标的</th>
+          <th>分组</th>
+          <th>方向</th>
+          <th>规则</th>
+          <th class="r">金额/股数</th>
+          <th>到期时间</th>
+          <th>状态</th>
+        </tr>
+      </thead>
+      <tbody>
+        <template x-for="it in intents" :key="it.id">
+          <tr>
+            <td class="muted" style="font-family:var(--mono);font-size:11px;white-space:nowrap" x-text="fmtTs(it.created_at)"></td>
+            <td><span class="badge badge-am" x-text="it.symbol"></span></td>
+            <td><span class="badge badge-muted" x-text="it.group_id||'—'"></span></td>
+            <td>
+              <span :class="it.side==='buy'?'badge badge-ok':'badge badge-fail'"
+                    x-text="it.side==='buy'?'买入':'卖出'"></span>
+            </td>
+            <td style="font-size:12px;color:var(--muted)" x-text="it.rule||'—'"></td>
+            <td class="r" style="font-family:var(--mono);font-size:12px">
+              <span x-show="it.value" x-text="'€'+it.value?.toFixed(0)"></span>
+              <span x-show="!it.value && it.quantity" x-text="it.quantity?.toFixed(4)+' 股'"></span>
+              <span x-show="!it.value && !it.quantity" style="color:var(--faint)">—</span>
+            </td>
+            <td style="font-family:var(--mono);font-size:11px;color:var(--faint)"
+                x-text="it.expires_at ? fmtTs(it.expires_at) : '—'"></td>
+            <td>
+              <span :class="'s-'+it.status" x-text="intentStatusLabel(it.status)"></span>
+              <div x-show="it.status_reason" style="font-size:10px;color:var(--faint);margin-top:2px" x-text="it.status_reason?.slice(0,40)"></div>
+            </td>
+          </tr>
+        </template>
+        <tr x-show="intents.length===0 && !intentsLoading">
+          <td colspan="8" style="color:var(--faint);text-align:center;padding:20px">暂无意向单记录</td>
+        </tr>
+        <tr x-show="intentsLoading">
+          <td colspan="8" style="color:var(--faint);text-align:center;padding:20px">加载中…</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ════ Modal: 下单 ════ -->
+<div class="modal-overlay" x-show="orderModal" @click.self="orderModal=false" style="display:none" x-transition>
+  <div class="modal">
+    <h2>
+      <span x-text="orderSide==='buy'?'买入':'卖出'"></span>
+      <span class="badge badge-am" x-text="orderInst?.ticker?.split('_')[0]||''"></span>
+      <span :class="t212Env==='live'?'env-live':'env-demo'" x-text="(t212Env||'demo').toUpperCase()"></span>
+      <button class="btn btn-ghost btn-sm" style="margin-left:auto" @click="orderModal=false">✕</button>
+    </h2>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:12px" x-text="orderInst?.shortName||orderInst?.name||''"></div>
+    <!-- 持仓 -->
+    <div x-show="t212Positions[orderInst?.ticker]"
+         style="margin-bottom:12px;padding:8px 10px;background:var(--panel2);border-radius:5px;font-size:12px">
+      当前持仓: <span class="badge badge-ok" x-text="(t212Positions[orderInst?.ticker]?.quantity||0)+' 股'"></span>
+      &nbsp;均价: <span style="color:var(--muted);font-family:var(--mono)"
+                       x-text="t212Positions[orderInst?.ticker]?.averagePrice?.toFixed(2)||'—'"></span>
+      &nbsp;现价: <span style="color:var(--text);font-family:var(--mono)"
+                       x-text="t212Positions[orderInst?.ticker]?.currentPrice?.toFixed(2)||'—'"></span>
+    </div>
+    <!-- 买/卖切换 -->
+    <div style="display:flex;gap:8px;margin-bottom:10px">
+      <span class="side-tab" :class="orderSide==='buy'?'on-buy':''" @click="orderSide='buy'">买入</span>
+      <span class="side-tab" :class="orderSide==='sell'?'on-sell':''" @click="orderSide='sell'">卖出</span>
+    </div>
+    <!-- 订单类型 -->
+    <div style="margin-bottom:12px">
+      <div style="font-size:11px;color:var(--faint);margin-bottom:5px">订单类型</div>
+      <span class="otype-tab" :class="orderType==='market'?'on':''" @click="orderType='market'">市价单</span>
+      <span class="otype-tab" :class="orderType==='limit'?'on':''" @click="orderType='limit'">限价单</span>
+      <span class="otype-tab" :class="orderType==='stop'?'on':''" @click="orderType='stop'">止损单</span>
+    </div>
+    <!-- 市价买入: 金额 or 股数 -->
+    <div x-show="orderSide==='buy'&&orderType==='market'" style="display:flex;gap:8px;margin-bottom:10px">
+      <div class="field" style="flex:1;margin:0">
+        <label>金额 (€)</label>
+        <input type="number" x-model="orderValue" placeholder="150" min="1" @input="orderQty=''">
+      </div>
+      <div style="padding-top:20px;color:var(--faint);font-size:12px">或</div>
+      <div class="field" style="flex:1;margin:0">
+        <label>股数</label>
+        <input type="number" x-model="orderQty" placeholder="1" min="0.0001" step="0.001" @input="orderValue=''">
+      </div>
+    </div>
+    <!-- 市价卖出: 股数 -->
+    <div x-show="orderSide==='sell'&&orderType==='market'" class="field">
+      <label>卖出股数</label>
+      <input type="number" x-model="orderQty"
+             :placeholder="String(t212Positions[orderInst?.ticker]?.quantity||1)"
+             min="0.0001" step="0.001">
+    </div>
+    <!-- 限价单字段 -->
+    <div x-show="orderType==='limit'" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+      <div class="field" style="margin:0">
+        <label>限价 (触发价格)</label>
+        <input type="number" x-model="orderLimitPrice" placeholder="0.00" min="0.0001" step="0.0001">
+      </div>
+      <div class="field" style="margin:0">
+        <label>股数</label>
+        <input type="number" x-model="orderQty"
+               :placeholder="String(t212Positions[orderInst?.ticker]?.quantity||1)"
+               min="0.0001" step="0.001">
+      </div>
+    </div>
+    <!-- 止损单字段 -->
+    <div x-show="orderType==='stop'" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+      <div class="field" style="margin:0">
+        <label>触发价 (止损/止盈)</label>
+        <input type="number" x-model="orderStopPrice" placeholder="0.00" min="0.0001" step="0.0001">
+      </div>
+      <div class="field" style="margin:0">
+        <label>股数</label>
+        <input type="number" x-model="orderQty"
+               :placeholder="String(t212Positions[orderInst?.ticker]?.quantity||1)"
+               min="0.0001" step="0.001">
+      </div>
+    </div>
+    <!-- 限价/止损有效期 -->
+    <div x-show="orderType!=='market'" class="field" style="margin-bottom:10px">
+      <label>有效期</label>
+      <select x-model="orderValidity">
+        <option value="DAY">当日有效 (DAY)</option>
+        <option value="GOOD_TILL_CANCEL">撤销前有效 (GTC)</option>
+      </select>
+    </div>
+    <!-- 风控提示 -->
+    <div style="font-size:11px;color:var(--faint);padding:8px 10px;background:var(--panel2);border-radius:5px;margin-bottom:14px">
+      风控: 单笔上限 <span style="color:var(--amber)" x-text="riskMaxOrder+'€'"></span>
+      &nbsp;· 最大仓位 <span style="color:var(--amber)" x-text="riskMaxPos+'%'"></span>
+      <span x-show="orderType!=='market'">&nbsp;· 免费 API 限速 1 req/2s</span>
+    </div>
+    <button class="btn btn-amber" style="width:100%;padding:10px"
+      @click="submitOrder()" :disabled="orderLoading||orderSubmitDisabled()">
+      <span x-show="orderLoading">提交中…</span>
+      <span x-show="!orderLoading"
+            x-text="'确认'+(orderSide==='buy'?'买入':'卖出')+(orderType==='limit'?'（限价）':orderType==='stop'?'（止损）':'')"></span>
+    </button>
+    <pre x-show="orderResult" style="margin-top:12px;font-size:11px;color:var(--up);white-space:pre-wrap;word-break:break-all"
+         x-text="JSON.stringify(orderResult,null,2)"></pre>
+  </div>
+</div>
+
+<!-- ════ Modal: 加入分组 ════ -->
+<div class="modal-overlay" x-show="addGroupModal" @click.self="addGroupModal=false" style="display:none" x-transition>
+  <div class="modal">
+    <h2>
+      加入分组
+      <span class="badge badge-am" x-text="(addGroupInst?.ticker||'').split('_')[0]"></span>
+      <button class="btn btn-ghost btn-sm" style="margin-left:auto" @click="addGroupModal=false">✕</button>
+    </h2>
+    <div class="field">
+      <label>选择分组</label>
+      <select x-model="addGroupTarget">
+        <option value="">-- 请选择 --</option>
+        <template x-for="g in groups" :key="g.id">
+          <option :value="g.id" x-text="g.name+' ('+g.id+')'"></option>
+        </template>
+      </select>
+    </div>
+    <div class="field">
+      <label>T212 Ticker</label>
+      <input x-model="addGroupTicker" placeholder="如 NVDA_US_EQ">
+    </div>
+    <button class="btn btn-amber" style="width:100%" @click="submitAddToGroup()" :disabled="!addGroupTarget">确认加入</button>
+  </div>
+</div>
+
+<!-- ════ Modal: 波段交易 ════ -->
+<div class="modal-overlay" x-show="bandModal" @click.self="bandModal=false" style="display:none" x-transition>
+  <div class="modal" style="width:500px">
+    <h2>
+      波段交易
+      <span class="badge badge-am" x-text="(bandInst?.ticker||'').split('_')[0]"></span>
+      <span :class="t212Env==='live'?'env-live':'env-demo'" x-text="(t212Env||'demo').toUpperCase()"></span>
+      <button class="btn btn-ghost btn-sm" style="margin-left:auto" @click="bandModal=false">✕</button>
+    </h2>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:8px" x-text="bandInst?.shortName||bandInst?.name||''"></div>
+    <!-- 当前持仓 -->
+    <div x-show="t212Positions[bandInst?.ticker]"
+         style="margin-bottom:12px;padding:8px 10px;background:var(--panel2);border-radius:5px;font-size:12px">
+      持仓: <span class="badge badge-ok" x-text="(t212Positions[bandInst?.ticker]?.quantity||0)+' 股'"></span>
+      &nbsp;均价: <span style="color:var(--muted);font-family:var(--mono)"
+                       x-text="t212Positions[bandInst?.ticker]?.averagePrice?.toFixed(4)||'—'"></span>
+      &nbsp;现价: <span style="color:var(--text);font-family:var(--mono)"
+                       x-text="(bandInst?.currentPrice||t212Positions[bandInst?.ticker]?.currentPrice)?.toFixed(4)||'—'"></span>
+    </div>
+    <!-- 说明 -->
+    <div style="font-size:11px;color:var(--faint);padding:8px 10px;background:var(--panel2);border-radius:5px;margin-bottom:14px;line-height:1.6">
+      波段策略：同时挂 <span style="color:var(--down)">卖出限价单</span>（止盈，高于现价）和 <span style="color:var(--up)">买入限价单</span>（抄底，低于现价）。
+      两笔订单依序提交，间隔 2s（免费 API 最高频率）。至少填一组。
+    </div>
+
+    <!-- 卖出段 (止盈) -->
+    <div style="border:1px solid rgba(244,96,78,.25);border-radius:6px;padding:12px;margin-bottom:10px">
+      <div style="font-size:11px;color:var(--down);font-weight:600;margin-bottom:8px;letter-spacing:.06em">卖出限价（止盈 / 高卖）</div>
+      <div class="band-grid">
+        <div class="field" style="margin:0">
+          <label>卖出限价</label>
+          <input type="number" x-model="bandSellPrice" placeholder="高于现价" min="0.0001" step="0.0001">
+        </div>
+        <div class="field" style="margin:0">
+          <label>卖出股数</label>
+          <input type="number" x-model="bandSellQty" placeholder="1" min="0.0001" step="0.001">
+        </div>
+      </div>
+    </div>
+
+    <!-- 买入段 (抄底) -->
+    <div style="border:1px solid rgba(61,214,140,.25);border-radius:6px;padding:12px;margin-bottom:12px">
+      <div style="font-size:11px;color:var(--up);font-weight:600;margin-bottom:8px;letter-spacing:.06em">买入限价（抄底 / 低买）</div>
+      <div class="band-grid">
+        <div class="field" style="margin:0">
+          <label>买入限价</label>
+          <input type="number" x-model="bandBuyPrice" placeholder="低于现价" min="0.0001" step="0.0001">
+        </div>
+        <div class="field" style="margin:0">
+          <label>买入股数</label>
+          <input type="number" x-model="bandBuyQty" placeholder="1" min="0.0001" step="0.001">
+        </div>
+      </div>
+    </div>
+
+    <!-- 有效期 -->
+    <div class="field" style="margin-bottom:14px">
+      <label>有效期</label>
+      <select x-model="bandValidity">
+        <option value="GOOD_TILL_CANCEL">撤销前有效 (GTC) — 推荐</option>
+        <option value="DAY">当日有效 (DAY)</option>
+      </select>
+    </div>
+
+    <button class="btn btn-amber" style="width:100%;padding:10px"
+      @click="submitBand()" :disabled="bandLoading||(!bandSellPrice&&!bandBuyPrice)">
+      <span x-show="bandLoading">提交中，请等待 2s 间隔…</span>
+      <span x-show="!bandLoading">确认挂波段单</span>
+    </button>
+    <pre x-show="bandResult" style="margin-top:12px;font-size:11px;color:var(--up);white-space:pre-wrap;word-break:break-all"
+         x-text="JSON.stringify(bandResult,null,2)"></pre>
+  </div>
+</div>
+
+<!-- ════ Modal: 复制/移动到分组 ════ -->
+<div class="modal-overlay" x-show="copyModal" @click.self="copyModal=false" style="display:none" x-transition>
+  <div class="modal">
+    <h2>
+      <span x-text="copyMode==='move'?'移动到分组':'复制到分组'"></span>
+      <span class="badge badge-am" x-text="copySym?.symbol||''"></span>
+      <button class="btn btn-ghost btn-sm" style="margin-left:auto" @click="copyModal=false">✕</button>
+    </h2>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:12px">
+      当前在: <span class="badge badge-muted" x-text="selGroup?.name+' ('+selGroup?.id+')'||'—'"></span>
+    </div>
+    <div class="field">
+      <label>目标分组</label>
+      <select x-model="copyTarget">
+        <option value="">-- 请选择 --</option>
+        <template x-for="g in groups.filter(g=>g.id!==selGroup?.id)" :key="g.id">
+          <option :value="g.id" x-text="g.name+' ('+g.id+')'"></option>
+        </template>
+      </select>
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:14px">
+      <span class="side-tab" :class="copyMode==='copy'?'on-buy':''" @click="copyMode='copy'">复制（保留原组）</span>
+      <span class="side-tab" :class="copyMode==='move'?'on-sell':''" @click="copyMode='move'">移动（从原组删除）</span>
+    </div>
+    <button class="btn btn-amber" style="width:100%;padding:10px"
+      @click="submitCopyToGroup()" :disabled="!copyTarget">确认操作</button>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" :class="toast.ok?'ok':'err'" x-text="toast.msg"
+  x-show="toast.show" x-transition:leave="transition" x-transition:leave-end="opacity-0"></div>
+
+<!-- ── 实时图表模态 ── -->
+<div x-show="rtChart.open"
+     style="position:fixed;inset:0;z-index:500;background:rgba(0,0,0,.75);
+            display:flex;align-items:center;justify-content:center">
+  <div style="width:min(1120px,96vw);height:min(640px,88vh);
+              background:#0b1018;border:1px solid var(--line);border-radius:8px;
+              display:flex;flex-direction:column;overflow:hidden">
+    <!-- 图表标题栏 -->
+    <div style="padding:10px 16px;border-bottom:1px solid var(--line);
+                display:flex;align-items:center;gap:10px;flex-shrink:0">
+      <span style="color:var(--amber);font-size:9px;animation:rtpulse 1.5s infinite">●</span>
+      <strong x-text="rt.symbol" style="font-size:14px;letter-spacing:.04em"></strong>
+      <span style="font-size:11px;color:var(--faint)">成交热力图</span>
+      <!-- 时间窗口 -->
+      <div style="margin-left:16px;display:flex;gap:4px">
+        <template x-for="m in [1,3,5,15,30]" :key="m">
+          <button @click="setChartWindow(m)"
+                  :class="rtChart.window===m?'btn btn-amber btn-sm':'btn btn-ghost btn-sm'"
+                  style="padding:2px 8px;font-size:11px" x-text="m+'m'"></button>
+        </template>
+      </div>
+      <!-- 图例 -->
+      <div style="margin-left:auto;display:flex;align-items:center;gap:12px;font-size:11px;color:var(--faint)">
+        <span><span style="color:rgba(74,222,128,.9)">●</span> 买入 up-tick</span>
+        <span><span style="color:rgba(219,112,147,.9)">●</span> 卖出 down-tick</span>
+        <span style="color:var(--faint);font-size:10px">大单(≥500股)高亮</span>
+        <button @click="closeRtChart()" class="btn btn-ghost btn-sm" style="padding:2px 8px;margin-left:8px">✕</button>
+      </div>
+    </div>
+    <!-- Canvas -->
+    <canvas id="rt-chart-canvas" style="flex:1;width:100%;display:block"></canvas>
+  </div>
+</div>
+
+<!-- ── 实时成交流面板（在 wrap 内以访问 rt 状态） ── -->
+<div x-show="rt.open"
+     x-transition:enter="transition ease-out duration-200"
+     x-transition:enter-start="transform translate-x-full opacity-0"
+     x-transition:enter-end="transform translate-x-0 opacity-100"
+     x-transition:leave="transition ease-in duration-150"
+     x-transition:leave-start="transform translate-x-0 opacity-100"
+     x-transition:leave-end="transform translate-x-full opacity-0"
+     style="position:fixed;right:0;top:0;height:100vh;width:320px;
+            background:var(--panel);border-left:1px solid var(--line);
+            z-index:300;display:flex;flex-direction:column;
+            box-shadow:-4px 0 24px rgba(0,0,0,.5)">
+
+  <!-- 标题栏 -->
+  <div style="padding:12px 14px;border-bottom:1px solid var(--line);
+              display:flex;align-items:center;gap:8px;flex-shrink:0">
+    <span style="color:var(--amber);font-size:9px;animation:rtpulse 1.5s infinite">●</span>
+    <strong style="font-size:13px;letter-spacing:.04em" x-text="rt.symbol"></strong>
+    <span style="font-size:11px;color:var(--faint)">实时成交</span>
+    <div style="margin-left:auto;display:flex;gap:6px;align-items:center">
+      <span x-show="rt.quote.change_pct!=null"
+            :style="(rt.quote.change_pct??0)>=0?'color:var(--up);font-size:12px':'color:var(--down);font-size:12px'"
+            x-text="((rt.quote.change_pct??0)>=0?'+':'')+rt.quote.change_pct?.toFixed(2)+'%'"></span>
+      <button @click="openRtChart()" class="btn btn-ghost btn-sm" style="padding:2px 6px" title="成交图表">📊</button>
+      <button @click="closeRt()" class="btn btn-ghost btn-sm" style="padding:2px 8px">✕</button>
+    </div>
+  </div>
+
+  <!-- 盘口报价 -->
+  <div style="padding:12px 14px;border-bottom:1px solid var(--line);
+              display:grid;grid-template-columns:1fr 1fr;gap:10px;flex-shrink:0">
+    <div>
+      <div style="font-size:10px;color:var(--faint);margin-bottom:2px">Last
+        <span x-show="rt.quote.source==='t212_position'" style="color:var(--up)">● 实时</span>
+        <span x-show="rt.quote.source==='yfinance'" style="color:var(--faint)">~15min</span>
+      </div>
+      <div style="font-size:20px;font-weight:700;letter-spacing:-.5px"
+           x-text="rt.quote.last?.toFixed(2)||'—'"></div>
+    </div>
+    <div>
+      <div style="font-size:10px;color:var(--faint);margin-bottom:2px">Bid / Ask</div>
+      <div style="font-size:13px">
+        <span style="color:var(--up)" x-text="rt.quote.bid?.toFixed(2)||'—'"></span>
+        <span style="color:var(--faint)"> / </span>
+        <span style="color:var(--down)" x-text="rt.quote.ask?.toFixed(2)||'—'"></span>
+      </div>
+      <div style="font-size:10px;color:var(--faint);margin-top:2px"
+           x-show="rt.quote.bid && rt.quote.ask"
+           x-text="'价差 '+(rt.quote.ask-rt.quote.bid).toFixed(3)"></div>
+    </div>
+    <div>
+      <div style="font-size:10px;color:var(--faint);margin-bottom:2px">今日区间</div>
+      <div style="font-size:11px;color:var(--muted)"
+           x-text="(rt.quote.low?.toFixed(2)||'—')+'  –  '+(rt.quote.high?.toFixed(2)||'—')"></div>
+    </div>
+    <div>
+      <div style="font-size:10px;color:var(--faint);margin-bottom:2px">昨收</div>
+      <div style="font-size:11px;color:var(--muted)" x-text="rt.quote.prev_close?.toFixed(2)||'—'"></div>
+    </div>
+  </div>
+
+  <!-- 买卖压力 (近5分钟) -->
+  <div style="padding:10px 14px;border-bottom:1px solid var(--line);flex-shrink:0">
+    <div style="font-size:10px;color:var(--faint);margin-bottom:6px;letter-spacing:.04em">
+      买卖压力 · 近5分钟
+      <span style="float:right;color:var(--muted)" x-text="rtFmtVol(rt.buyVol5+rt.sellVol5)+' 股'"></span>
+    </div>
+    <div style="height:8px;border-radius:4px;background:rgba(239,68,68,.3);overflow:hidden">
+      <div :style="'width:'+rtBuyPct()+'%;height:100%;background:rgba(34,197,94,.65);transition:width .5s ease'"></div>
+    </div>
+    <div style="display:flex;justify-content:space-between;font-size:11px;margin-top:5px">
+      <span style="color:var(--up)">▲ 买入 <span x-text="rtBuyPct()+'%'"></span></span>
+      <span style="color:var(--down)">卖出 <span x-text="(100-rtBuyPct())+'%'"></span> ▼</span>
+    </div>
+  </div>
+
+  <!-- 成交流 header -->
+  <div style="display:grid;grid-template-columns:58px 68px 54px 1fr;
+              padding:5px 14px;font-size:10px;color:var(--faint);
+              letter-spacing:.04em;border-bottom:1px solid var(--line);flex-shrink:0">
+    <span>时间</span><span>价格</span><span style="text-align:right">量</span><span style="text-align:right">方向</span>
+  </div>
+
+  <!-- 成交流列表 -->
+  <div style="flex:1;overflow-y:auto">
+    <div x-show="rt.trades.length===0"
+         style="padding:32px 14px;color:var(--faint);font-size:12px;text-align:center;line-height:2">
+      等待成交数据…<br>
+      <span style="font-size:11px">仅盘中（欧洲 15:30–22:00）有效</span>
+    </div>
+    <template x-for="(t, i) in rt.trades.slice(0, 150)" :key="i">
+      <div style="display:grid;grid-template-columns:58px 68px 54px 1fr;
+                  padding:3px 14px;font-size:12px;font-variant-numeric:tabular-nums;
+                  border-bottom:1px solid rgba(255,255,255,.025)"
+           :style="t.v >= 500 ? 'background:rgba(255,200,0,.06)' : ''">
+        <span style="color:var(--faint)"
+              x-text="new Date(t.t).toLocaleTimeString('en',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false})"></span>
+        <span :style="t.d>0?'color:var(--up)':t.d<0?'color:var(--down)':'color:var(--muted)'"
+              x-text="t.p.toFixed(2)"></span>
+        <span style="text-align:right"
+              :style="t.v>=500?'color:var(--amber);font-weight:600':'color:var(--muted)'"
+              x-text="rtFmtVol(t.v)"></span>
+        <span style="text-align:right"
+              :style="t.d>0?'color:var(--up)':t.d<0?'color:var(--down)':'color:var(--faint)'"
+              x-text="t.d>0?'▲':t.d<0?'▼':'—'"></span>
+      </div>
+    </template>
+  </div>
+
+</div>
+
+</div><!-- /wrap -->
+
+<script>
+// 自动检测 API 前缀（直连 :30810 或经 nginx /stockpilot/）
+const API = (() => {
+  const p = location.pathname;
+  return p.startsWith('/stockpilot') ? '/stockpilot/api/v1' : '/api/v1';
+})();
+
+function app() {
+  return {
+    tab: 'overview',
+    clock: '',
+    health: null,
+    summary: null,
+    pipeline: [
+      {k:'T212同步',v:'—',cls:''},
+      {k:'行情采集',v:'—',cls:''},
+      {k:'指标信号',v:'—',cls:''},
+      {k:'LLM情绪',v:'—',cls:''},
+      {k:'早报推送',v:'—',cls:''},
+      {k:'执行队列',v:'—',cls:''},
+    ],
+
+    // groups
+    groups: [],
+    selGroup: null,
+    detail: null,
+    editG: {name:'',description:''},
+    showNewGroup: false,
+    newG: {id:'',name:'',description:''},
+    newSym: {symbol:'',t212_ticker:''},
+    tgList: [],
+    tgEvents: ['daily_report','signal'],
+    newTg: '',
+    emailList: [],
+    emailEvents: ['daily_report'],
+    newEmail: '',
+
+    // routes
+    routes: [],
+    routeFilter: '',
+
+    // log
+    logs: [],
+    logHours: 24,
+
+    // jobs
+    availableJobs: [],
+    recentRuns: [],
+    runningJob: null,
+    jobSchedule: [],
+    jobCatalog: JOB_CATALOG_DATA,
+
+    // T212 自选
+    t212CustomWl: [],
+    wlQuotes: {},
+    wlRefreshing: false,
+    wlLastRefresh: null,
+    wlRefreshTimer: null,
+    wlAddQ: '',
+    wlSuggestions: [],
+    _wlTimer: null,
+
+    // T212 行情
+    t212View: 'positions',    // 'positions' | 'search'
+    t212Instruments: [],
+    t212Positions: {},
+    t212Env: 'demo',
+    searchQ: '',
+    searchLoading: false,
+    activityTicker: null,
+    activity: null,
+    activityLoading: false,
+    // 下单 modal
+    orderModal: false,
+    orderInst: null,
+    orderSide: 'buy',
+    orderType: 'market',        // 'market' | 'limit' | 'stop'
+    orderQty: '',
+    orderValue: '',
+    orderLimitPrice: '',
+    orderStopPrice: '',
+    orderValidity: 'DAY',
+    orderLoading: false,
+    orderResult: null,
+    // 波段交易 modal
+    bandModal: false,
+    bandInst: null,
+    bandBuyPrice: '',
+    bandSellPrice: '',
+    bandBuyQty: '',
+    bandSellQty: '',
+    bandValidity: 'GOOD_TILL_CANCEL',
+    bandLoading: false,
+    bandResult: null,
+    // 挂单
+    openOrders: [],
+    openOrdersLoading: false,
+    // 加入分组 modal
+    addGroupModal: false,
+    addGroupInst: null,
+    addGroupTarget: '',
+    addGroupTicker: '',
+    // 风控
+    riskMaxOrder: 200,
+    riskMaxPos: 15,
+
+    // symbol detail (T212持仓/自选)
+    symData: {},
+    expandedSym: null,          // 当前展开的 symbol (ticker 前缀, 大写)
+    expandedSymTicker: null,    // 完整 T212 ticker
+    symDetail: null,
+    symDetailLoading: false,
+    symEdit: {community_priority:'all', tags:[], extra_email:[], newTag:'', newEmail:''},
+    pushingGroup: null,         // 正在推送的分组 ID
+    // intents
+    intents: [],
+    intentStatus: '',
+    intentsLoading: false,
+    // copy/move to group
+    copyModal: false,
+    copySym: null,
+    copyTarget: '',
+    copyMode: 'copy',
+
+    // 实时成交流
+    rt: { open:false, symbol:null, trades:[], quote:{}, buyVol5:0, sellVol5:0, es:null, qtimer:null },
+    // 实时图表
+    rtChart: { open:false, window:5 },
+    // 量化交易
+    quant: { status:null, loading:false, busy:false, trades:[], timer:null,
+             form:{rsi_buy:45, rsi_sell:55, stop_loss:1.0, profit_pct:2.0, budget_ratio:50, sell_ratio:100, budget_eur:0, interval:5, max_trades_day:10} },
+
+    // toast
+    toast: {show:false, msg:'', ok:true},
+
+    async init() {
+      this.tickClock();
+      setInterval(()=>this.tickClock(), 10000);
+      // 概览自动刷新 60s
+      setInterval(()=>{ if(this.tab==='overview') this.loadOverview(); }, 60000);
+      await this.loadHealth();
+      await this.loadOverview();
+    },
+
+    tickClock() {
+      this.clock = fmtBerlin(new Date(), true) + ' CET';
+    },
+
+    async loadHealth() {
+      try {
+        const r = await fetch(API.replace('/api/v1','') + '/health');
+        this.health = await r.json();
+      } catch(e) { console.warn('health fetch failed', e) }
+    },
+
+    async loadOverview() {
+      await this.loadHealth();
+      try {
+        const r = await fetch(API + '/dashboard/summary');
+        this.summary = await r.json();
+      } catch(e) {}
+      try {
+        const r = await fetch(API + '/jobs');
+        const data = await r.json();
+        this.updatePipeline(data.recent_runs || []);
+      } catch(e) {}
+    },
+
+    updatePipeline(runs) {
+      const latest = {};
+      for (const r of runs) {
+        if (!latest[r.job] || r.started_at > latest[r.job].started_at)
+          latest[r.job] = r;
+      }
+      const map = {
+        'job_t212_sync':   {k:'T212同步',   i:0},
+        'job_daily_prices':{k:'行情采集',   i:1},
+        'job_signals':     {k:'指标信号',   i:2},
+        'job_sentiment':   {k:'LLM情绪',    i:3},
+        'job_daily_report':{k:'早报推送',   i:4},
+      };
+      for (const [jname, {i}] of Object.entries(map)) {
+        const r = latest[jname];
+        if (r) {
+          this.pipeline[i].v = r.status === 'ok'
+            ? fmtTsShort(r.finished_at) + ' ✓'
+            : r.status === 'running' ? '运行中…' : '✗ ' + (r.detail||'').slice(0,20);
+          this.pipeline[i].cls = r.status === 'ok' ? 'ok' : r.status === 'running' ? 'run' : 'fail';
+        }
+      }
+      const pending = this.summary?.pending_intents?.length || 0;
+      this.pipeline[5].v = pending ? pending + ' 待确认' : '空闲';
+      this.pipeline[5].cls = pending ? 'run' : 'ok';
+    },
+
+    // ── Groups ──
+    async loadGroups() {
+      try {
+        const r = await fetch(API + '/groups');
+        const gs = await r.json();
+        this.groups = gs.map(g => ({
+          ...g,
+          symbol_count: g.symbol_count ?? (g.config?.symbols || []).length,
+        }));
+      } catch(e) { this.err('加载分组失败') }
+    },
+
+    async loadGroupDetail(gid) {
+      try {
+        const r = await fetch(API + '/groups/' + gid);
+        if (!r.ok) throw new Error(await r.text());
+        const g = await r.json();
+        const cfg = g.config || {};
+        const syms = (g.symbols || []).map(s => ({
+          symbol: s.symbol,
+          t212_ticker: s.t212_ticker || '',
+          tags: s.tags || [],
+          symbol_config: s.symbol_config || {},
+        })).filter(s => s.symbol);
+
+        this.detail = { ...g, symbols: syms };
+        this.editG = {name: g.name||'', description: g.description||''};
+        this.tgList = [...(cfg.telegram_chat_ids || [])];
+        this.emailList = [...(cfg.email_recipients || [])];
+        this.tgEvents = [...(cfg.notify_on || ['daily_report','signal'])];
+        this.emailEvents = [...(cfg.notify_on || ['daily_report'])];
+
+        // fetch indicators + sentiment summary for each symbol
+        this.symData = {};
+        this.expandedSym = null;
+        if (syms.length) {
+          await Promise.allSettled(syms.map(async sym => {
+            const [r1, r2] = await Promise.all([
+              fetch(API+'/dashboard/indicators/'+sym.symbol).catch(()=>null),
+              fetch(API+'/dashboard/sentiment/'+sym.symbol+'?days=3').catch(()=>null),
+            ]);
+            const ind = r1?.ok ? await r1.json() : null;
+            const sent = r2?.ok ? await r2.json() : null;
+            const agg = sent?.aggregates || {};
+            const nCnt = agg.news_cnt || 0;
+            const cCnt = agg.comm_cnt || 0;
+            let combined = null;
+            if (nCnt > 0 || cCnt > 0) {
+              combined = ((agg.sent_avg||0)*nCnt + (agg.comm_avg||0)*cCnt*0.5) / (nCnt + cCnt*0.5);
+            }
+            this.symData[sym.symbol] = {
+              rsi: ind?.rsi ?? null,
+              macd_cross: ind?.macd_cross ?? null,
+              combined,
+              sig_cnt: (this.summary?.signals_24h || []).filter(s => s.symbol === sym.symbol).length,
+            };
+          }));
+        }
+      } catch(e) { this.err('加载分组详情失败') }
+    },
+
+    openNewGroup() {
+      this.showNewGroup = true;
+      this.selGroup = null;
+      this.detail = null;
+      this.newG = {id:'',name:'',description:''};
+    },
+
+    async createGroup() {
+      try {
+        const r = await fetch(API+'/groups', {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({id:this.newG.id,name:this.newG.name,description:this.newG.description})
+        });
+        if (!r.ok) throw new Error(await r.text());
+        this.ok('分组已创建');
+        this.showNewGroup = false;
+        await this.loadGroups();
+        const g = this.groups.find(x=>x.id===this.newG.id);
+        if (g) { this.selGroup = g; await this.loadGroupDetail(g.id); }
+      } catch(e) { this.err('创建失败: '+e.message) }
+    },
+
+    async saveGroup() {
+      try {
+        const cfg = this.selGroup.config || {};
+        const r = await fetch(API+'/groups/'+this.selGroup.id, {
+          method:'PUT', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({id:this.selGroup.id, name:this.editG.name,
+            description:this.editG.description, ...cfg})
+        });
+        if (!r.ok) throw new Error(await r.text());
+        this.ok('已保存');
+        await this.loadGroups();
+      } catch(e) { this.err('保存失败: '+e.message) }
+    },
+
+    async deleteGroup() {
+      if (!confirm('确认删除分组 '+this.selGroup.id+' ？此操作不可撤销')) return;
+      try {
+        const r = await fetch(API+'/groups/'+this.selGroup.id, {method:'DELETE'});
+        if (!r.ok) throw new Error(await r.text());
+        this.ok('已删除');
+        this.selGroup = null; this.detail = null;
+        await this.loadGroups();
+      } catch(e) { this.err('删除失败: '+e.message) }
+    },
+
+    async pushGroup(groupId, groupName) {
+      this.pushingGroup = groupId;
+      try {
+        const r = await fetch(API+'/groups/'+groupId+'/push', {method:'POST'});
+        if (!r.ok) throw new Error(await r.text());
+        this.ok('已触发推送：'+groupName+'（后台发送中）');
+      } catch(e) { this.err('推送失败: '+e.message) }
+      this.pushingGroup = null;
+    },
+
+    async addSymbol() {
+      if (!this.newSym.symbol) return;
+      try {
+        const r = await fetch(API+'/groups/'+this.selGroup.id+'/symbols', {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({symbol:this.newSym.symbol.toUpperCase(),
+            t212_ticker:this.newSym.t212_ticker||null})
+        });
+        if (!r.ok) throw new Error(await r.text());
+        this.ok('标的已添加');
+        this.newSym = {symbol:'',t212_ticker:''};
+        await this.loadGroupDetail(this.selGroup.id);
+        await this.loadGroups();
+      } catch(e) { this.err('添加失败: '+e.message) }
+    },
+
+    async removeSymbol(sym) {
+      if (!confirm('从该分组移除 '+sym+' ？')) return;
+      try {
+        const r = await fetch(API+'/groups/'+this.selGroup.id+'/symbols/'+sym, {method:'DELETE'});
+        if (!r.ok) throw new Error(await r.text());
+        this.ok('已移除 '+sym);
+        await this.loadGroupDetail(this.selGroup.id);
+        await this.loadGroups();
+      } catch(e) { this.err('移除失败: '+e.message) }
+    },
+
+    addTg() {
+      const v = this.newTg.trim();
+      if (!v || this.tgList.includes(v)) return;
+      this.tgList.push(v); this.newTg = '';
+    },
+    removeTg(i) { this.tgList.splice(i,1) },
+    async saveTg() {
+      try {
+        const r = await fetch(API+'/groups/'+this.selGroup.id+'/recipients', {
+          method:'PUT', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({channel:'telegram',recipients:this.tgList,event_types:this.tgEvents})
+        });
+        if (!r.ok) throw new Error(await r.text());
+        this.ok('Telegram 接收者已保存');
+        await this.loadGroups();
+      } catch(e) { this.err('保存失败: '+e.message) }
+    },
+
+    addEmail() {
+      const v = this.newEmail.trim();
+      if (!v || this.emailList.includes(v)) return;
+      this.emailList.push(v); this.newEmail = '';
+    },
+    removeEmail(i) { this.emailList.splice(i,1) },
+    async saveEmail() {
+      try {
+        const r = await fetch(API+'/groups/'+this.selGroup.id+'/recipients', {
+          method:'PUT', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({channel:'email',recipients:this.emailList,event_types:this.emailEvents})
+        });
+        if (!r.ok) throw new Error(await r.text());
+        this.ok('Email 接收者已保存');
+        await this.loadGroups();
+      } catch(e) { this.err('保存失败: '+e.message) }
+    },
+
+    async syncYaml() {
+      try {
+        const r = await fetch(API+'/sync-yaml', {method:'POST'});
+        if (!r.ok) throw new Error(await r.text());
+        this.ok('YAML 已同步到数据库');
+        await this.loadGroups();
+        if (this.selGroup) await this.loadGroupDetail(this.selGroup.id);
+      } catch(e) { this.err('同步失败: '+e.message) }
+    },
+    async exportYaml() {
+      try {
+        const r = await fetch(API+'/export-yaml');
+        const text = await r.text();
+        const blob = new Blob([text], {type:'text/yaml'});
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'watchlist_export.yaml';
+        a.click();
+        this.ok('YAML 已下载');
+      } catch(e) { this.err('导出失败') }
+    },
+
+    // ── Routes ──
+    async loadRoutes() {
+      try {
+        const q = this.routeFilter ? '?group_id='+this.routeFilter : '';
+        const r = await fetch(API+'/routes'+q);
+        this.routes = await r.json();
+      } catch(e) { this.err('加载路由失败') }
+    },
+
+    // ── Log ──
+    async loadLog() {
+      try {
+        const r = await fetch(API+'/notify-log?hours='+this.logHours);
+        this.logs = await r.json();
+      } catch(e) { this.err('加载日志失败') }
+    },
+
+    // ── Jobs ──
+    async loadJobs() {
+      try {
+        const [r1, r2] = await Promise.all([
+          fetch(API+'/jobs'),
+          fetch(API+'/jobs/schedule').catch(()=>null),
+        ]);
+        const data = await r1.json();
+        this.availableJobs = data.available || [];
+        this.recentRuns = data.recent_runs || [];
+        if (r2?.ok) {
+          const sch = await r2.json();
+          this.jobSchedule = sch.jobs || [];
+        }
+      } catch(e) { this.err('加载任务失败') }
+    },
+
+    jobNextRun(id) {
+      const j = this.jobSchedule.find(s => s.id === id || s.id.startsWith(id));
+      if (!j?.next_run) return '—';
+      return j.next_run.toString().slice(5,16).replace('T',' ');
+    },
+
+    async triggerJob(name) {
+      this.runningJob = name;
+      const label = JOB_LABELS[name] || name;
+      try {
+        const r = await fetch(API+'/jobs/'+name+'/run', {method:'POST'});
+        if (!r.ok) throw new Error(await r.text());
+        this.ok(label+' 执行完成');
+        await this.loadJobs();
+      } catch(e) { this.err(label+' 执行失败: '+e.message) }
+      this.runningJob = null;
+    },
+
+    // ── T212 行情 ──
+    async loadT212Tab() {
+      if (this.wlRefreshTimer) { clearInterval(this.wlRefreshTimer); this.wlRefreshTimer = null; }
+      this.closeSymDetail();
+      await this.loadGroups();
+      await Promise.all([this.showPositions(), this.loadOpenOrders()]);
+    },
+
+    async loadOpenOrders() {
+      this.openOrdersLoading = true;
+      try {
+        const r = await fetch(API+'/t212/orders/open');
+        if (!r.ok) throw new Error(await r.text());
+        const d = await r.json();
+        this.openOrders = d.items || [];
+      } catch(e) {
+        this.openOrders = [];
+        // 静默失败（挂单查询不影响主界面）
+        console.warn('挂单加载失败:', e.message);
+      }
+      this.openOrdersLoading = false;
+    },
+
+    async cancelOrder(orderId) {
+      if (!confirm('确认取消挂单 #'+orderId+' ？')) return;
+      try {
+        const r = await fetch(API+'/t212/orders/'+orderId, {method:'DELETE'});
+        if (!r.ok) throw new Error(await r.text());
+        this.ok('挂单 #'+orderId+' 已取消');
+        await this.loadOpenOrders();
+      } catch(e) { this.err('取消失败: '+e.message) }
+    },
+
+    orderTypeLabel(t) {
+      const m = {LIMIT:'限价单', STOP:'止损单', MARKET:'市价单',
+                 limit:'限价单', stop:'止损单', market:'市价单'};
+      return m[t] || (t||'限价单');
+    },
+
+    async showPositions() {
+      this.t212View = 'positions';
+      this.searchQ = '';
+      this.activityTicker = null;
+      try {
+        const r = await fetch(API+'/t212/positions');
+        if (!r.ok) throw new Error(await r.text());
+        this.t212Positions = await r.json();
+        this.t212Instruments = Object.values(this.t212Positions);
+      } catch(e) { this.err('加载持仓失败: '+e.message) }
+    },
+
+    async showWatchlist() {
+      this.activityTicker = null;
+      // 清除可能残留的旧计时器
+      if (this.wlRefreshTimer) { clearInterval(this.wlRefreshTimer); this.wlRefreshTimer = null; }
+      try {
+        const r = await fetch(API+'/t212/watchlist');
+        if (!r.ok) throw new Error(await r.text());
+        this.t212CustomWl = await r.json();
+        this.t212Instruments = this.t212CustomWl.map(w => ({
+          ticker: w.ticker,
+          name: w.name || w.ticker,
+          shortName: w.name || w.ticker,
+        }));
+      } catch(e) { this.err('加载自选失败: '+e.message); return; }
+      await this.loadWlQuotes();
+      // 30s 自动刷新报价
+      this.wlRefreshTimer = setInterval(() => {
+        if (this.t212View === 'watchlist') this.loadWlQuotes(true);
+        else { clearInterval(this.wlRefreshTimer); this.wlRefreshTimer = null; }
+      }, 30000);
+    },
+
+    async loadWlQuotes(silent) {
+      if (!silent) this.wlRefreshing = true;
+      try {
+        const r = await fetch(API+'/t212/watchlist/quotes');
+        if (!r.ok) throw new Error(await r.text());
+        const list = await r.json();
+        const map = {};
+        for (const q of list) map[q.ticker] = q;
+        this.wlQuotes = map;
+        const now = new Date();
+        this.wlLastRefresh = now.getHours().toString().padStart(2,'0')+':'+
+                             now.getMinutes().toString().padStart(2,'0')+':'+
+                             now.getSeconds().toString().padStart(2,'0');
+      } catch(e) { if (!silent) this.err('获取报价失败: '+e.message); }
+      this.wlRefreshing = false;
+    },
+
+    wlSearchDebounce() {
+      clearTimeout(this._wlTimer);
+      this._wlTimer = setTimeout(async ()=>{
+        const q = this.wlAddQ.trim();
+        if (q.length < 1) { this.wlSuggestions = []; return; }
+        try {
+          const r = await fetch(API+'/t212/search?q='+encodeURIComponent(q)+'&limit=8');
+          this.wlSuggestions = r.ok ? await r.json() : [];
+        } catch { this.wlSuggestions = []; }
+      }, 300);
+    },
+
+    wlPickFirst() {
+      if (this.wlSuggestions.length) this.wlAddItem(this.wlSuggestions[0]);
+    },
+
+    async wlAddItem(inst) {
+      this.wlSuggestions = [];
+      this.wlAddQ = '';
+      try {
+        const r = await fetch(API+'/t212/watchlist', {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ticker: inst.ticker, name: inst.shortName||inst.name||inst.ticker}),
+        });
+        if (!r.ok) throw new Error(await r.text());
+        const sym = inst.ticker.split('_')[0];
+        this.ok(sym+' 已加入自选，正在刷新数据…');
+        await this.showWatchlist();
+        // 新标的立即触发后台数据刷新（价格/新闻/指标）
+        fetch(API+'/t212/watchlist/symbols/'+sym+'/refresh', {method:'POST'}).catch(()=>{});
+      } catch(e) { this.err('添加失败: '+e.message) }
+    },
+
+    async wlRemoveItem(ticker) {
+      try {
+        const r = await fetch(API+'/t212/watchlist/'+encodeURIComponent(ticker), {method:'DELETE'});
+        if (!r.ok) throw new Error(await r.text());
+        this.ok(ticker.split('_')[0]+' 已移除');
+        await this.showWatchlist();
+      } catch(e) { this.err('移除失败: '+e.message) }
+    },
+
+    async doSearch() {
+      const q = this.searchQ.trim();
+      if (!q) return;
+      this.searchLoading = true;
+      this.activityTicker = null;
+      // 确保自选列表已加载（用于搜索结果中显示 ✓/+ 自选状态）
+      if (!this.t212CustomWl.length) {
+        try {
+          const wr = await fetch(API+'/t212/watchlist');
+          if (wr.ok) this.t212CustomWl = await wr.json();
+        } catch(_) {}
+      }
+      try {
+        const r = await fetch(API+'/t212/search?q='+encodeURIComponent(q)+'&limit=50');
+        if (!r.ok) throw new Error(await r.text());
+        this.t212Instruments = await r.json();
+        this.t212ActiveWl = '';
+      } catch(e) { this.err('搜索失败: '+e.message) }
+      this.searchLoading = false;
+    },
+
+    clearSearch() {
+      this.searchQ = '';
+      this.t212Instruments = [];
+      this.activityTicker = null;
+      this.activity = null;
+    },
+
+    async toggleActivity(ticker) {
+      if (this.activityTicker === ticker) { this.activityTicker = null; return; }
+      // 关闭详情抽屉，两者互斥
+      this.closeSymDetail();
+      this.activityTicker = ticker;
+      this.activityLoading = true;
+      this.activity = null;
+      try {
+        const r = await fetch(API+'/t212/instruments/'+encodeURIComponent(ticker)+'/activity?days=7');
+        if (!r.ok) throw new Error(await r.text());
+        this.activity = await r.json();
+      } catch(e) { this.err('加载动态失败: '+e.message) }
+      this.activityLoading = false;
+    },
+
+    openOrder(inst, side) {
+      this.orderInst = inst;
+      this.orderSide = side;
+      this.orderType = 'market';
+      this.orderQty = '';
+      this.orderValue = '';
+      this.orderLimitPrice = '';
+      this.orderStopPrice = '';
+      this.orderValidity = 'DAY';
+      this.orderResult = null;
+      this.orderModal = true;
+    },
+
+    orderSubmitDisabled() {
+      if (this.orderLoading) return true;
+      if (this.orderType === 'market') return !this.orderQty && !this.orderValue;
+      if (this.orderType === 'limit') return !this.orderQty || !this.orderLimitPrice;
+      if (this.orderType === 'stop')  return !this.orderQty || !this.orderStopPrice;
+      return true;
+    },
+
+    openBandModal(inst) {
+      this.bandInst = inst;
+      this.bandBuyPrice = '';
+      this.bandSellPrice = '';
+      this.bandBuyQty = inst.quantity ? String(inst.quantity) : '';
+      this.bandSellQty = inst.quantity ? String(inst.quantity) : '';
+      this.bandValidity = 'GOOD_TILL_CANCEL';
+      this.bandResult = null;
+      this.bandModal = true;
+    },
+
+    async submitBand() {
+      if (this.bandLoading) return;
+      this.bandLoading = true;
+      this.bandResult = null;
+      try {
+        const body = {
+          ticker: this.bandInst.ticker,
+          timeValidity: this.bandValidity,
+        };
+        if (this.bandSellPrice && this.bandSellQty) {
+          body.sellLimitPrice = parseFloat(this.bandSellPrice);
+          body.sellQty = parseFloat(this.bandSellQty);
+        }
+        if (this.bandBuyPrice && this.bandBuyQty) {
+          body.buyLimitPrice = parseFloat(this.bandBuyPrice);
+          body.buyQty = parseFloat(this.bandBuyQty);
+        }
+        const r = await fetch(API+'/t212/band', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify(body),
+        });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.detail || JSON.stringify(d));
+        this.bandResult = d.results;
+        const parts = [];
+        if (d.results.sell_limit) parts.push('卖出限价单');
+        if (d.results.buy_limit)  parts.push('买入限价单');
+        this.ok('波段单已提交: '+parts.join(' + '));
+        await this.loadOpenOrders();
+      } catch(e) { this.err('波段交易失败: '+e.message) }
+      this.bandLoading = false;
+    },
+
+    async submitOrder() {
+      if (this.orderLoading) return;
+      this.orderLoading = true;
+      this.orderResult = null;
+      try {
+        let url, body;
+        if (this.orderType === 'limit') {
+          url = API+'/t212/orders/limit';
+          body = {
+            ticker: this.orderInst.ticker,
+            side: this.orderSide,
+            quantity: parseFloat(this.orderQty),
+            limitPrice: parseFloat(this.orderLimitPrice),
+            timeValidity: this.orderValidity,
+          };
+        } else if (this.orderType === 'stop') {
+          url = API+'/t212/orders/stop';
+          body = {
+            ticker: this.orderInst.ticker,
+            side: this.orderSide,
+            quantity: parseFloat(this.orderQty),
+            stopPrice: parseFloat(this.orderStopPrice),
+            timeValidity: this.orderValidity,
+          };
+        } else {
+          url = API+'/t212/orders';
+          body = {
+            ticker: this.orderInst.ticker,
+            side: this.orderSide,
+            quantity: this.orderQty ? parseFloat(this.orderQty) : null,
+            value:    this.orderValue ? parseFloat(this.orderValue) : null,
+          };
+        }
+        const r = await fetch(url, {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify(body),
+        });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.detail || JSON.stringify(d));
+        this.orderResult = d.result;
+        const typeLabel = this.orderType==='limit'?'限价':this.orderType==='stop'?'止损':'市价';
+        this.ok((this.orderSide==='buy'?'买入':'卖出')+typeLabel+'订单已提交');
+        // 刷新持仓和挂单
+        const [pr] = await Promise.all([
+          fetch(API+'/t212/positions'),
+          this.loadOpenOrders(),
+        ]);
+        if (pr.ok) this.t212Positions = await pr.json();
+      } catch(e) { this.err('下单失败: '+e.message) }
+      this.orderLoading = false;
+    },
+
+    addToGroupPrompt(inst) {
+      this.addGroupInst = inst;
+      this.addGroupTicker = inst.ticker;
+      this.addGroupTarget = '';
+      this.addGroupModal = true;
+      if (!this.groups.length) this.loadGroups();
+    },
+
+    async submitAddToGroup() {
+      const sym = (this.addGroupInst.ticker.split('_')[0]).toUpperCase();
+      try {
+        const r = await fetch(API+'/groups/'+this.addGroupTarget+'/symbols', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({symbol: sym, t212_ticker: this.addGroupTicker}),
+        });
+        if (!r.ok) throw new Error(await r.text());
+        this.ok(sym+' 已加入分组 '+this.addGroupTarget);
+        this.addGroupModal = false;
+        // 刷新动态中的跟踪状态
+        if (this.activityTicker) {
+          const r2 = await fetch(API+'/t212/instruments/'+encodeURIComponent(this.activityTicker)+'/activity');
+          if (r2.ok) this.activity = await r2.json();
+        }
+      } catch(e) { this.err('加入分组失败: '+e.message) }
+    },
+
+    // ── Symbol detail drawer ──
+    _stopSymChart() {
+      const c = document.getElementById('sym-chart-canvas');
+      if (c?._stopChart) { c._stopChart(); c._stopChart = null; }
+    },
+    _startSymChart() {
+      this.$nextTick(() => {
+        const canvas = document.getElementById('sym-chart-canvas');
+        if (!canvas) return;
+        let af = null;
+        const self = this;
+        canvas._stopChart = () => { if (af) { cancelAnimationFrame(af); af = null; } };
+        const loop = () => {
+          drawRtChart(canvas, self.rt.trades, self.rt.quote, self.rtChart.window * 60000);
+          af = requestAnimationFrame(loop);
+        };
+        af = requestAnimationFrame(loop);
+      });
+    },
+    // ── T212 标的详情抽屉 ──
+    async openSymDetail(inst) {
+      const sym = inst.ticker.split('_')[0].toUpperCase();
+      this._stopSymChart();
+      this._stopQuantPoll();
+      if (this.expandedSym === sym) {
+        this.closeSymDetail();
+        return;
+      }
+      // 关闭动态面板，两者互斥
+      this.activityTicker = null;
+      this.activity = null;
+      this.expandedSym = sym;
+      this.expandedSymTicker = inst.ticker;
+      this.symDetailLoading = true;
+      this.symDetail = null;
+      try {
+        const [r1, r2] = await Promise.all([
+          fetch(API+'/dashboard/indicators/'+sym).catch(()=>null),
+          fetch(API+'/dashboard/sentiment/'+sym+'?days=7').catch(()=>null),
+        ]);
+        const ind = r1?.ok ? await r1.json() : null;
+        const sent = r2?.ok ? await r2.json() : null;
+        this.symDetail = {
+          ind,
+          sent: sent ? { ...sent.aggregates, label: sent.label,
+                         news: sent.news } : null,
+        };
+      } catch(e) { this.err('加载标的详情失败') }
+      this.symDetailLoading = false;
+      this._startRtData(sym);
+      this._startSymChart();
+      this.loadQuant(sym);
+      this.quant.timer = setInterval(() => this.loadQuant(sym, true), 5000);
+    },
+    closeSymDetail() {
+      this._stopSymChart();
+      this._stopQuantPoll();
+      this.closeRt();
+      this.expandedSym = null;
+      this.expandedSymTicker = null;
+      this.symDetail = null;
+    },
+
+    // ── 量化交易 ──
+    _stopQuantPoll() {
+      if (this.quant.timer) { clearInterval(this.quant.timer); this.quant.timer = null; }
+    },
+    async loadQuant(symbol, silent) {
+      if (!silent) this.quant.loading = true;
+      try {
+        const [r1, r2] = await Promise.all([
+          fetch(API+'/quant/strategies/'+symbol).catch(()=>null),
+          fetch(API+'/quant/trades?symbol='+symbol+'&limit=20').catch(()=>null),
+        ]);
+        this.quant.status = r1?.ok ? await r1.json() : null;
+        this.quant.trades = r2?.ok ? await r2.json() : [];
+        if (this.quant.status?.params && !silent) {
+          this.quant.form = { ...this.quant.form, ...this.quant.status.params };
+        }
+      } catch(e) { this.quant.status = null; }
+      this.quant.loading = false;
+    },
+    async startQuant() {
+      const sym = this.expandedSym;
+      const ticker = this.expandedSymTicker || (sym + '_US_EQ');
+      if (!confirm(`确认启动 ${sym} 量化策略?\n买入 ${this.quant.form.budget_ratio}% 现金 · 卖出 ${this.quant.form.sell_ratio}% 持仓\n盈利目标 +${this.quant.form.profit_pct}% · 硬止损 -${this.quant.form.stop_loss}%\n环境: ${this.quant.status?.env || '?'} · 循环运行直到手动停止\n策略将自动真实下单!`)) return;
+      this.quant.busy = true;
+      try {
+        const r = await fetch(API+'/quant/strategies/'+sym+'/start', {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ t212_ticker: ticker, ...this.quant.form,
+            rsi_buy: parseFloat(this.quant.form.rsi_buy),
+            rsi_sell: parseFloat(this.quant.form.rsi_sell),
+            stop_loss: parseFloat(this.quant.form.stop_loss),
+            profit_pct: parseFloat(this.quant.form.profit_pct),
+            budget_ratio: parseFloat(this.quant.form.budget_ratio),
+            sell_ratio: parseFloat(this.quant.form.sell_ratio),
+            budget_eur: parseFloat(this.quant.form.budget_eur) || 0,
+            interval: parseInt(this.quant.form.interval),
+            max_trades_day: parseInt(this.quant.form.max_trades_day) }),
+        });
+        if (!r.ok) throw new Error((await r.json()).detail || await r.text());
+        this.quant.status = await r.json();
+        this.ok(sym+' 量化策略已启动');
+      } catch(e) { this.err('启动失败: '+e.message) }
+      this.quant.busy = false;
+    },
+    async stopQuant() {
+      const sym = this.expandedSym;
+      this.quant.busy = true;
+      try {
+        const r = await fetch(API+'/quant/strategies/'+sym+'/stop', {method:'POST'});
+        if (!r.ok) throw new Error(await r.text());
+        this.ok(sym+' 量化策略已停止');
+        await this.loadQuant(sym);
+      } catch(e) { this.err('停止失败: '+e.message) }
+      this.quant.busy = false;
+    },
+    quantReasonLabel(r) {
+      return {ind_buy:'指标买入', profit_sell:'目标卖出', signal_stop:'指标止损',
+              hard_stop:'硬止损', manual_stop:'手动'}[r] || r;
+    },
+
+    async saveSymConfig(symbol) {
+      try {
+        const r = await fetch(API+'/groups/'+this.selGroup.id+'/symbols', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({
+            symbol,
+            tags: this.symEdit.tags,
+            extra_email: this.symEdit.extra_email,
+            community_priority: this.symEdit.community_priority || null,
+          }),
+        });
+        if (!r.ok) throw new Error(await r.text());
+        this.ok(symbol + ' 配置已保存');
+        await this.loadGroupDetail(this.selGroup.id);
+      } catch(e) { this.err('保存失败: '+e.message) }
+    },
+
+    // ── 实时成交流 ──
+    _startRtData(symbol) {
+      if (this.rt.es) { this.rt.es.close(); this.rt.es = null; }
+      if (this.rt.qtimer) { clearInterval(this.rt.qtimer); this.rt.qtimer = null; }
+      this.rt.symbol = symbol;
+      this.rt.trades = [];
+      this.rt.buyVol5 = 0;
+      this.rt.sellVol5 = 0;
+      this.rt.quote = {};
+      const pollQuote = async () => {
+        try {
+          const r = await fetch(API + '/stream/quote/' + symbol);
+          if (r.ok) this.rt.quote = await r.json();
+        } catch(e) {}
+      };
+      pollQuote();
+      this.rt.qtimer = setInterval(pollQuote, 10000);
+      this.rt.es = new EventSource(API + '/stream/trades/' + symbol);
+      this.rt.es.onmessage = (e) => {
+        const t = JSON.parse(e.data);
+        if (t.error) return;
+        this.rt.trades.unshift(t);
+        if (this.rt.trades.length > 300) this.rt.trades.pop();
+        const cut = Date.now() - 5 * 60 * 1000;
+        let buy = 0, sell = 0;
+        for (const tr of this.rt.trades) {
+          if (tr.t < cut) break;
+          if (tr.d >= 0) buy += tr.v; else sell += tr.v;
+        }
+        this.rt.buyVol5 = buy;
+        this.rt.sellVol5 = sell;
+      };
+    },
+    async openRt(symbol) {
+      this._startRtData(symbol);
+      this.rt.open = true;
+    },
+    closeRt() {
+      if (this.rt.es) { this.rt.es.close(); this.rt.es = null; }
+      if (this.rt.qtimer) { clearInterval(this.rt.qtimer); this.rt.qtimer = null; }
+      this.rt.open = false;
+      this.rt.symbol = null;
+    },
+    rtBuyPct() {
+      const total = this.rt.buyVol5 + this.rt.sellVol5;
+      return total > 0 ? Math.round(this.rt.buyVol5 / total * 100) : 50;
+    },
+    rtFmtVol(v) {
+      if (v >= 1000000) return (v/1000000).toFixed(1) + 'M';
+      if (v >= 1000) return (v/1000).toFixed(1) + 'K';
+      return v.toFixed(0);
+    },
+
+    openRtChart() {
+      this.rtChart.open = true;
+      this.$nextTick(() => {
+        const canvas = document.getElementById('rt-chart-canvas');
+        if (!canvas) return;
+        const self = this;
+        let af = null;
+        canvas._stopChart = () => { if (af) cancelAnimationFrame(af); };
+        const loop = () => {
+          drawRtChart(canvas, self.rt.trades, self.rt.quote, self.rtChart.window * 60000);
+          af = requestAnimationFrame(loop);
+        };
+        af = requestAnimationFrame(loop);
+      });
+    },
+    closeRtChart() {
+      this.rtChart.open = false;
+      const canvas = document.getElementById('rt-chart-canvas');
+      if (canvas?._stopChart) canvas._stopChart();
+    },
+    setChartWindow(m) {
+      this.rtChart.window = m;
+    },
+
+    // ── Intents ──
+    async loadIntentsTab() {
+      await this.loadIntents();
+    },
+
+    async loadIntents() {
+      this.intentsLoading = true;
+      try {
+        const q = this.intentStatus ? '?status='+this.intentStatus : '';
+        const r = await fetch(API+'/intents'+q);
+        if (!r.ok) throw new Error(await r.text());
+        this.intents = await r.json();
+      } catch(e) { this.err('加载意向单失败') }
+      this.intentsLoading = false;
+    },
+
+    intentStatusLabel(s) {
+      const m = {pending:'待确认', confirmed:'已确认', executed:'已执行',
+                  expired:'已过期', rejected:'已拒绝', skipped:'已跳过', failed:'失败'};
+      return m[s] || s || '—';
+    },
+
+    // ── Copy/Move to group ──
+    openCopyToGroup(s) {
+      this.copySym = s;
+      this.copyTarget = '';
+      this.copyMode = 'copy';
+      this.copyModal = true;
+      if (!this.groups.length) this.loadGroups();
+    },
+
+    async submitCopyToGroup() {
+      if (!this.copyTarget || !this.copySym) return;
+      const sym = this.copySym;
+      try {
+        const r = await fetch(API+'/groups/'+this.copyTarget+'/symbols', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({symbol: sym.symbol, t212_ticker: sym.t212_ticker||null,
+                                tags: sym.tags||[]}),
+        });
+        if (!r.ok) throw new Error(await r.text());
+        if (this.copyMode === 'move') {
+          const r2 = await fetch(API+'/groups/'+this.selGroup.id+'/symbols/'+sym.symbol,
+                                 {method:'DELETE'});
+          if (!r2.ok) throw new Error(await r2.text());
+          await this.loadGroupDetail(this.selGroup.id);
+          await this.loadGroups();
+        }
+        this.ok(sym.symbol+(this.copyMode==='move'?' 已移动':' 已复制')+'到 '+this.copyTarget);
+        this.copyModal = false;
+      } catch(e) { this.err('操作失败: '+e.message) }
+    },
+
+    sentClass(s) {
+      if (s == null || s === 0) return 'badge badge-muted';
+      return s > 0 ? 'badge badge-ok' : 'badge badge-fail';
+    },
+    sentLabel(s) {
+      const m = {2:'极正', 1:'利好', 0:'中性', '-1':'利空', '-2':'极负'};
+      return m[String(s)] ?? '—';
+    },
+
+    // ── Helpers ──
+    fmt(v, prefix='', signed=false) {
+      if (v == null) return '—';
+      const s = (signed && v > 0 ? '+' : '') + prefix + v.toFixed(2);
+      return s;
+    },
+    fmtTs(ts) {
+      if (!ts) return '—';
+      return fmtBerlin(new Date(ts), false);
+    },
+    duration(start, end) {
+      if (!start || !end) return '—';
+      const ms = new Date(end) - new Date(start);
+      if (ms < 1000) return ms+'ms';
+      if (ms < 60000) return (ms/1000).toFixed(1)+'s';
+      return (ms/60000).toFixed(1)+'m';
+    },
+    ok(msg) { this.toast = {show:true,msg:'✓ '+msg,ok:true}; setTimeout(()=>this.toast.show=false,3000) },
+    err(msg) { this.toast = {show:true,msg:'✗ '+msg,ok:false}; setTimeout(()=>this.toast.show=false,5000) },
+  }
+}
+
+// 统一时区格式化: Europe/Berlin
+const _berlinFmt = new Intl.DateTimeFormat('sv-SE', {   // sv-SE 输出 YYYY-MM-DD HH:MM
+  timeZone: 'Europe/Berlin',
+  year: 'numeric', month: '2-digit', day: '2-digit',
+  hour: '2-digit', minute: '2-digit',
+});
+const _berlinFmtSec = new Intl.DateTimeFormat('sv-SE', {
+  timeZone: 'Europe/Berlin',
+  year: 'numeric', month: '2-digit', day: '2-digit',
+  hour: '2-digit', minute: '2-digit', second: '2-digit',
+});
+
+function fmtBerlin(d, withSec=false) {
+  try {
+    const s = (withSec ? _berlinFmtSec : _berlinFmt).format(d);
+    return s.replace('T',' ');   // sv-SE 已用空格，直接返回
+  } catch { return '—'; }
+}
+
+function fmtTsShort(ts) {
+  if (!ts) return '—';
+  try {
+    const s = _berlinFmt.format(new Date(ts));
+    return s.slice(5);    // 去掉年份, 只留 MM-DD HH:MM
+  } catch { return '—'; }
+}
+
+// 任务中文名映射
+const JOB_LABELS = {
+  't212_sync':    'T212账户同步',
+  'intraday':     '盘中行情采集',
+  'daily_prices': '日线行情采集',
+  'community':    'T212社区采集',
+  'news':         '新闻快讯采集',
+  'sentiment':    'LLM情绪分析',
+  'signals':      '技术指标信号',
+  'daily_report': '生成并推送早报',
+  'backfill':     '历史数据补全',
+  'expire_intents':'过期意向单清理',
+};
+
+// 任务目录（用于任务页签展示）
+const JOB_CATALOG_DATA = [
+  { id:'t212_sync',     label:'T212账户同步',    manual:true,
+    desc:'同步 Trading212 账户持仓快照和现金余额到数据库',
+    schedule:'每 30 分钟' },
+  { id:'intraday',      label:'盘中行情采集',    manual:true,
+    desc:'获取 watchlist 股票分钟级价格 + Finnhub 实时快讯',
+    schedule:'周一至周五 15:30–22:00 每15分钟' },
+  { id:'daily_prices',  label:'日线行情采集',    manual:true,
+    desc:'收盘后拉取全部标的日线 OHLCV，补全历史缺口',
+    schedule:'周一至周五 22:40' },
+  { id:'community',     label:'T212社区采集',    manual:true,
+    desc:'抓取 T212 社区论坛中与 watchlist 相关帖子，供 LLM 情绪分析使用',
+    schedule:'周一至周五 22:50' },
+  { id:'news',          label:'新闻快讯采集',    manual:true,
+    desc:'从 Finnhub 和 RSS 源获取 watchlist 股票相关新闻',
+    schedule:'周一至周五 22:55' },
+  { id:'sentiment',     label:'LLM情绪分析',     manual:true,
+    desc:'调用 SiliconFlow DeepSeek 对当日新闻与社区帖子批量打分（-2 极负 → +2 极正）',
+    schedule:'周一至周五 23:00' },
+  { id:'signals',       label:'技术指标信号',    manual:true,
+    desc:'计算 RSI / MACD / 布林带等指标，生成买入/卖出信号并即时推送',
+    schedule:'周一至周五 23:10' },
+  { id:'daily_report',  label:'生成并推送早报',  manual:true,
+    desc:'按分组汇总信号、情绪、持仓数据，调用 LLM 生成中文早报推送到 Telegram/Email',
+    schedule:'周一至周五 08:00' },
+  { id:'backfill',      label:'历史数据补全',    manual:true,
+    desc:'初次启动或新增标的时，回填近 2 年日线历史数据（跳过已有数据）',
+    schedule:'应用启动时自动触发' },
+  { id:'expire_intents',label:'过期意向单清理',  manual:false,
+    desc:'自动清理超时未确认的交易意向单（默认 TTL 30 分钟）',
+    schedule:'每 5 分钟（自动）' },
+];
+
+// ── 实时成交图表渲染器 ────────────────────────────────────────────────────────
+
+function _niceStep(range, target) {
+  const raw = range / target;
+  const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  const n = raw / mag;
+  const nice = n < 1.5 ? 1 : n < 3 ? 2 : n < 7 ? 5 : 10;
+  return Math.round(nice * mag * 1e8) / 1e8;
+}
+
+function _timeLabels(cutoff, now, windowMs) {
+  let intervalMs;
+  if (windowMs <= 90000)      intervalMs = 10000;
+  else if (windowMs <= 300000) intervalMs = 30000;
+  else if (windowMs <= 900000) intervalMs = 120000;
+  else                         intervalMs = 300000;
+  const labels = [];
+  const first = Math.ceil(cutoff / intervalMs) * intervalMs;
+  for (let t = first; t <= now; t += intervalMs) {
+    const d = new Date(t);
+    const hh = d.getHours().toString().padStart(2,'0');
+    const mm = d.getMinutes().toString().padStart(2,'0');
+    const ss = d.getSeconds().toString().padStart(2,'0');
+    labels.push({ t, label: windowMs <= 90000 ? `${hh}:${mm}:${ss}` : `${hh}:${mm}` });
+  }
+  return labels;
+}
+
+function drawRtChart(canvas, trades, quote, windowMs) {
+  const dpr  = window.devicePixelRatio || 1;
+  const dispW = canvas.offsetWidth;
+  const dispH = canvas.offsetHeight;
+  if (dispW < 10 || dispH < 10) return;
+
+  const needW = Math.round(dispW * dpr);
+  const needH = Math.round(dispH * dpr);
+  if (canvas.width !== needW || canvas.height !== needH) {
+    canvas.width  = needW;
+    canvas.height = needH;
+  }
+
+  const ctx = canvas.getContext('2d');
+  ctx.save();
+  ctx.scale(dpr, dpr);
+  const W = dispW, H = dispH;
+
+  // Layout constants
+  const YLAB  = 58;   // y-axis label width (left)
+  const VAPR  = 100;  // volume-at-price panel (right)
+  const TIMEH = 26;   // time axis (bottom)
+  const PTOP  = 18;   // padding top
+
+  const cX = YLAB, cY = PTOP;
+  const cW = W - YLAB - VAPR, cH = H - PTOP - TIMEH;
+  const vapX = W - VAPR;
+
+  // Background
+  ctx.fillStyle = '#0b1018';
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#0e1520';
+  ctx.fillRect(cX, cY, cW, cH);
+
+  const now    = Date.now();
+  const cutoff = now - windowMs;
+  const visible = trades.filter(t => t.t >= cutoff);
+
+  // Price range
+  let prices = visible.map(t => t.p);
+  if (quote?.last) prices.push(quote.last);
+  if (prices.length === 0) {
+    ctx.fillStyle = '#445';
+    ctx.font = '13px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('等待成交数据…  (仅盘中 15:30–22:00)', W/2, H/2);
+    ctx.restore();
+    return;
+  }
+  let pMin = Math.min(...prices), pMax = Math.max(...prices);
+  if (pMax - pMin < 0.01) { pMin -= 0.5; pMax += 0.5; }
+  const pad = (pMax - pMin) * 0.14;
+  pMin -= pad; pMax += pad;
+  const pRange = pMax - pMin;
+
+  const tx = t => cX + (t - cutoff) / windowMs * cW;
+  const ty = p => cY + cH - (p - pMin) / pRange * cH;
+
+  // ── Price grid
+  const step = _niceStep(pRange, 8);
+  const first = Math.ceil(pMin / step) * step;
+  ctx.strokeStyle = '#1a2435';
+  ctx.lineWidth = 1;
+  ctx.font = '10px monospace';
+  ctx.textAlign = 'right';
+  ctx.fillStyle = '#445566';
+  for (let p = first; p <= pMax + step * 0.01; p = Math.round((p + step) * 1e6) / 1e6) {
+    if (p < pMin) continue;
+    const y = Math.round(ty(p)) + 0.5;
+    ctx.beginPath(); ctx.moveTo(cX, y); ctx.lineTo(cX + cW, y); ctx.stroke();
+    ctx.fillText(p.toFixed(step < 1 ? 2 : (step < 10 ? 2 : 1)), cX - 5, y + 3);
+  }
+
+  // ── Time grid + labels
+  const tLabels = _timeLabels(cutoff, now, windowMs);
+  ctx.textAlign = 'center';
+  for (const {t, label} of tLabels) {
+    const x = Math.round(tx(t)) + 0.5;
+    if (x < cX + 10 || x > cX + cW - 10) continue;
+    ctx.strokeStyle = '#17233a';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(x, cY); ctx.lineTo(x, cY + cH); ctx.stroke();
+    ctx.fillStyle = '#445566';
+    ctx.font = '10px monospace';
+    ctx.fillText(label, x, H - 7);
+  }
+
+  // ── Volume-at-price panel (right)
+  ctx.fillStyle = '#0b1018';
+  ctx.fillRect(vapX, cY, VAPR, cH);
+  ctx.strokeStyle = '#1a2435';
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(vapX, cY); ctx.lineTo(vapX, cY + cH); ctx.stroke();
+
+  const bucketSz = step / 2;
+  const buyMap = {}, sellMap = {};
+  for (const t of visible) {
+    const key = (Math.round(t.p / bucketSz) * bucketSz).toFixed(5);
+    if (t.d >= 0) buyMap[key]  = (buyMap[key]  || 0) + t.v;
+    else           sellMap[key] = (sellMap[key] || 0) + t.v;
+  }
+  const allVols = [...Object.values(buyMap), ...Object.values(sellMap)];
+  const maxVol = allVols.length ? Math.max(...allVols) : 1;
+  const barH = Math.max(2, Math.min(16, cH / pRange * bucketSz * 0.75));
+  const maxBarW = VAPR - 4;
+
+  for (const [key, vol] of Object.entries(buyMap)) {
+    const p = parseFloat(key);
+    const y = ty(p) - barH / 2;
+    if (y < cY - barH || y > cY + cH) continue;
+    ctx.fillStyle = 'rgba(34,197,94,0.55)';
+    ctx.fillRect(vapX + 2, y, (vol / maxVol) * maxBarW, barH);
+  }
+  for (const [key, vol] of Object.entries(sellMap)) {
+    const p = parseFloat(key);
+    const y = ty(p) - barH / 2;
+    if (y < cY - barH || y > cY + cH) continue;
+    ctx.fillStyle = 'rgba(239,68,68,0.45)';
+    ctx.fillRect(vapX + 2, y, (vol / maxVol) * maxBarW, barH);
+  }
+
+  // VAP axis label
+  ctx.fillStyle = '#334';
+  ctx.font = '9px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('成交量/价', vapX + VAPR/2, cY + cH + 12);
+
+  // ── Trade dots
+  // draw neutral first, then directional on top
+  for (const pass of [0, -1, 1]) {
+    for (const t of visible) {
+      if (t.d !== pass) continue;
+      const x = tx(t.t), y = ty(t.p);
+      if (x < cX - 20 || x > cX + cW + 20) continue;
+      const r = Math.min(16, Math.max(2, Math.sqrt(t.v / 8)));
+      const big = t.v >= 500;
+      if (t.d > 0) {
+        ctx.fillStyle = big ? 'rgba(74,222,128,0.92)' : 'rgba(74,222,128,0.65)';
+      } else if (t.d < 0) {
+        ctx.fillStyle = big ? 'rgba(248,113,113,0.92)' : 'rgba(219,112,147,0.62)';
+      } else {
+        ctx.fillStyle = 'rgba(140,150,180,0.4)';
+      }
+      ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+      if (big) {
+        ctx.strokeStyle = t.d > 0 ? 'rgba(134,239,172,0.85)' : 'rgba(252,165,165,0.85)';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      }
+    }
+  }
+
+  // ── Current price line
+  if (quote?.last) {
+    const y = Math.round(ty(quote.last)) + 0.5;
+    if (y >= cY && y <= cY + cH) {
+      ctx.strokeStyle = '#f59e0b';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([5, 4]);
+      ctx.beginPath(); ctx.moveTo(cX, y); ctx.lineTo(vapX, y); ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Price badge on y-axis
+      const lbl = quote.last.toFixed(2);
+      ctx.fillStyle = '#f59e0b';
+      ctx.fillRect(1, y - 9, YLAB - 6, 17);
+      ctx.fillStyle = '#0b1018';
+      ctx.font = 'bold 10px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText(lbl, (YLAB - 5) / 2, y + 4);
+
+      // Price badge on vap panel
+      ctx.fillStyle = '#f59e0b';
+      ctx.fillRect(vapX + 1, y - 9, VAPR - 2, 17);
+      ctx.fillStyle = '#0b1018';
+      ctx.textAlign = 'center';
+      ctx.fillText(lbl, vapX + VAPR / 2, y + 4);
+    }
+  }
+
+  // ── Border
+  ctx.strokeStyle = '#1e2d42';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(cX, cY, cW, cH);
+
+  // ── Stats overlay (top-left corner)
+  const buyC  = visible.filter(t => t.d > 0).length;
+  const sellC = visible.filter(t => t.d < 0).length;
+  const total = visible.length;
+  ctx.fillStyle = 'rgba(11,16,24,0.75)';
+  ctx.fillRect(cX + 4, cY + 4, 160, 34);
+  ctx.font = '10px monospace';
+  ctx.textAlign = 'left';
+  ctx.fillStyle = '#556';
+  ctx.fillText(`成交 ${total} 笔`, cX + 8, cY + 16);
+  ctx.fillStyle = 'rgba(74,222,128,0.9)';
+  ctx.fillText(`▲ ${buyC}`, cX + 8, cY + 30);
+  ctx.fillStyle = 'rgba(248,113,113,0.9)';
+  ctx.fillText(`▼ ${sellC}`, cX + 55, cY + 30);
+  if (total > 0) {
+    ctx.fillStyle = '#667';
+    ctx.fillText(`买${Math.round(buyC/total*100)}%`, cX + 102, cY + 30);
+  }
+
+  ctx.restore();
+}
+</script>
+
+</body>
+</html>

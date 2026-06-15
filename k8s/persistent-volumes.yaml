@@ -1,0 +1,96 @@
+# ===============================
+# PersistentVolumes (hostPath, 数据在 /appHome/data/stockpilot/)
+# ===============================
+
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: stockpilot-tsdb-pv
+spec:
+  capacity:
+    storage: 10Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: local-storage
+  hostPath:
+    path: /appHome/data/stockpilot/tsdb
+
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: stockpilot-grafana-pv
+spec:
+  capacity:
+    storage: 2Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: local-storage
+  hostPath:
+    path: /appHome/data/stockpilot/grafana
+
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: stockpilot-backups-pv
+spec:
+  capacity:
+    storage: 5Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: local-storage
+  hostPath:
+    path: /appHome/data/stockpilot/backups
+
+# ===============================
+# PersistentVolumeClaims (volumeName 固定绑定,避免同 class 串绑)
+# ===============================
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: stockpilot-tsdb-pvc
+  namespace: stockpilot
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: local-storage
+  volumeName: stockpilot-tsdb-pv
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: stockpilot-grafana-pvc
+  namespace: stockpilot
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+  storageClassName: local-storage
+  volumeName: stockpilot-grafana-pv
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: stockpilot-backups-pvc
+  namespace: stockpilot
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+  storageClassName: local-storage
+  volumeName: stockpilot-backups-pv

@@ -1,0 +1,77 @@
+{
+  "uid": "sp-market",
+  "title": "StockPilot · 市场雷达",
+  "tags": ["stockpilot"],
+  "schemaVersion": 39,
+  "time": { "from": "now-90d", "to": "now" },
+  "refresh": "15m",
+  "panels": [
+    {
+      "id": 1, "type": "timeseries", "title": "收盘价 (日线)",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "stockpilot-tsdb" },
+      "targets": [{
+        "refId": "A", "format": "time_series",
+        "rawSql": "SELECT ts AS \"time\", symbol AS metric, close AS value FROM prices WHERE interval='1d' AND $__timeFilter(ts) ORDER BY 1"
+      }]
+    },
+    {
+      "id": 2, "type": "timeseries", "title": "RSI(14)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 10 },
+      "datasource": { "type": "postgres", "uid": "stockpilot-tsdb" },
+      "targets": [{
+        "refId": "A", "format": "time_series",
+        "rawSql": "SELECT ts::timestamptz AS \"time\", symbol AS metric, rsi AS value FROM indicators_daily WHERE $__timeFilter(ts::timestamptz) ORDER BY 1"
+      }],
+      "fieldConfig": { "defaults": { "min": 0, "max": 100, "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "green", "value": 30 }, { "color": "red", "value": 70 } ] } }, "overrides": [] }
+    },
+    {
+      "id": 3, "type": "timeseries", "title": "MACD 柱 (hist)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 10 },
+      "datasource": { "type": "postgres", "uid": "stockpilot-tsdb" },
+      "targets": [{
+        "refId": "A", "format": "time_series",
+        "rawSql": "SELECT ts::timestamptz AS \"time\", symbol AS metric, macd_hist AS value FROM indicators_daily WHERE $__timeFilter(ts::timestamptz) ORDER BY 1"
+      }],
+      "fieldConfig": { "defaults": { "custom": { "drawStyle": "bars", "fillOpacity": 60 } }, "overrides": [] }
+    },
+    {
+      "id": 4, "type": "timeseries", "title": "新闻情绪 (日均, LLM 打分)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 18 },
+      "datasource": { "type": "postgres", "uid": "stockpilot-tsdb" },
+      "targets": [{
+        "refId": "A", "format": "time_series",
+        "rawSql": "SELECT date_trunc('day', published) AS \"time\", symbol AS metric, avg(sentiment)::float AS value FROM news WHERE sentiment IS NOT NULL AND symbol IS NOT NULL AND $__timeFilter(published) GROUP BY 1,2 ORDER BY 1"
+      }],
+      "fieldConfig": { "defaults": { "min": -2, "max": 2 }, "overrides": [] }
+    },
+    {
+      "id": 5, "type": "timeseries", "title": "★ 社区情绪 (日均, T212 Community)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 18 },
+      "datasource": { "type": "postgres", "uid": "stockpilot-tsdb" },
+      "targets": [{
+        "refId": "A", "format": "time_series",
+        "rawSql": "SELECT date_trunc('day', published) AS \"time\", symbol AS metric, avg(sentiment)::float AS value FROM t212_community WHERE sentiment IS NOT NULL AND $__timeFilter(published) GROUP BY 1,2 ORDER BY 1"
+      }],
+      "fieldConfig": { "defaults": { "min": -2, "max": 2 }, "overrides": [] }
+    },
+    {
+      "id": 6, "type": "table", "title": "近 7 天信号",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 26 },
+      "datasource": { "type": "postgres", "uid": "stockpilot-tsdb" },
+      "targets": [{
+        "refId": "A", "format": "table",
+        "rawSql": "SELECT ts, symbol, rule, direction, strength FROM signals WHERE ts > now() - interval '7 days' ORDER BY ts DESC"
+      }]
+    },
+    {
+      "id": 7, "type": "table", "title": "社区热帖 (近 3 天, 按赞数)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 26 },
+      "datasource": { "type": "postgres", "uid": "stockpilot-tsdb" },
+      "targets": [{
+        "refId": "A", "format": "table",
+        "rawSql": "SELECT symbol, likes, sentiment, left(content, 80) AS content, author, published FROM t212_community WHERE published > now() - interval '3 days' ORDER BY likes DESC LIMIT 30"
+      }]
+    }
+  ]
+}

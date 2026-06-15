@@ -1,0 +1,66 @@
+{
+  "uid": "sp-health",
+  "title": "StockPilot · 系统健康",
+  "tags": ["stockpilot"],
+  "schemaVersion": 39,
+  "time": { "from": "now-3d", "to": "now" },
+  "refresh": "5m",
+  "panels": [
+    {
+      "id": 1, "type": "stat", "title": "24h 任务失败数",
+      "gridPos": { "h": 5, "w": 8, "x": 0, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "stockpilot-tsdb" },
+      "targets": [{
+        "refId": "A", "format": "table",
+        "rawSql": "SELECT count(*) FROM job_runs WHERE status='failed' AND started_at > now() - interval '24 hours'"
+      }],
+      "fieldConfig": { "defaults": { "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 1 } ] } }, "overrides": [] }
+    },
+    {
+      "id": 2, "type": "stat", "title": "24h 新增行情行数",
+      "gridPos": { "h": 5, "w": 8, "x": 8, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "stockpilot-tsdb" },
+      "targets": [{
+        "refId": "A", "format": "table",
+        "rawSql": "SELECT count(*) FROM prices WHERE ts > now() - interval '24 hours'"
+      }]
+    },
+    {
+      "id": 3, "type": "stat", "title": "24h 新增新闻+社区帖",
+      "gridPos": { "h": 5, "w": 8, "x": 16, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "stockpilot-tsdb" },
+      "targets": [{
+        "refId": "A", "format": "table",
+        "rawSql": "SELECT (SELECT count(*) FROM news WHERE fetched_at > now() - interval '24 hours') + (SELECT count(*) FROM t212_community WHERE fetched_at > now() - interval '24 hours')"
+      }]
+    },
+    {
+      "id": 4, "type": "table", "title": "各任务最近一次运行",
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 5 },
+      "datasource": { "type": "postgres", "uid": "stockpilot-tsdb" },
+      "targets": [{
+        "refId": "A", "format": "table",
+        "rawSql": "SELECT DISTINCT ON (job_name) job_name, started_at, finished_at, status, left(coalesce(detail,''),80) AS detail FROM job_runs ORDER BY job_name, started_at DESC"
+      }]
+    },
+    {
+      "id": 5, "type": "table", "title": "最近任务记录",
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 5 },
+      "datasource": { "type": "postgres", "uid": "stockpilot-tsdb" },
+      "targets": [{
+        "refId": "A", "format": "table",
+        "rawSql": "SELECT started_at, job_name, status, left(coalesce(detail,''),100) AS detail FROM job_runs ORDER BY started_at DESC LIMIT 50"
+      }]
+    },
+    {
+      "id": 6, "type": "timeseries", "title": "任务运行计数 (按状态)",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 14 },
+      "datasource": { "type": "postgres", "uid": "stockpilot-tsdb" },
+      "targets": [{
+        "refId": "A", "format": "time_series",
+        "rawSql": "SELECT date_trunc('hour', started_at) AS \"time\", job_name || '/' || status AS metric, count(*)::float AS value FROM job_runs WHERE $__timeFilter(started_at) GROUP BY 1,2 ORDER BY 1"
+      }],
+      "fieldConfig": { "defaults": { "custom": { "drawStyle": "bars", "fillOpacity": 60, "stacking": { "mode": "normal" } } }, "overrides": [] }
+    }
+  ]
+}
