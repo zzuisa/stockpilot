@@ -16,6 +16,8 @@ langchain-openai>=0.2.0
 langgraph>=0.2.0
 # vectorbt==0.28.5  # 回测专用,按需手动安装: pip install vectorbt==0.28.5
 feedparser==6.0.11
+# 富途 OpenAPI SDK（app/skills/futuapi 脚本用；与 pandas/numpy 兼容，验证无冲突）
+futu-api>=9.0.0
 websockets>=13.0
 python-telegram-bot==22.1
 pyyaml==6.0.2

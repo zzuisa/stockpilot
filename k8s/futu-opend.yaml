@@ -1,0 +1,67 @@
+# Futu OpenD 网关(无头) —— stockpilot-app 通过 futu-opend:11111 连接。
+# 上线步骤见 futu-opend/README.md：建 Secret → replicas=1 → 首次手机验证码。
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: futu-opend-data
+  namespace: stockpilot
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: futu-opend
+  namespace: stockpilot
+  labels:
+    app: futu-opend
+spec:
+  replicas: 0                 # 就绪但不运行；填好凭据后 scale 到 1(见 README)
+  strategy:
+    type: Recreate            # 登录态单实例；换 IP 会触发重新验证
+  selector:
+    matchLabels:
+      app: futu-opend
+  template:
+    metadata:
+      labels:
+        app: futu-opend
+    spec:
+      containers:
+      - name: opend
+        image: docker.io/library/futu-opend:v1
+        imagePullPolicy: Never
+        stdin: true
+        ports:
+        - { containerPort: 11111, name: api }
+        - { containerPort: 22222, name: telnet }
+        envFrom:
+        - secretRef:
+            name: futu-opend-secret     # FUTU_LOGIN_ACCOUNT / FUTU_LOGIN_PWD_MD5
+        volumeMounts:
+        - name: data
+          mountPath: /data
+        resources:
+          requests: { memory: "128Mi", cpu: "50m" }
+          limits:   { memory: "512Mi", cpu: "1000m" }
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: futu-opend-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: futu-opend
+  namespace: stockpilot
+  labels:
+    app: futu-opend
+spec:
+  selector:
+    app: futu-opend
+  ports:
+  - { name: api, port: 11111, targetPort: 11111 }
+  - { name: telnet, port: 22222, targetPort: 22222 }
