@@ -76,6 +76,7 @@ const orderInst = ref<T212Instrument | null>(null)
 const orderSide = ref<OrderSide>('buy')
 const bandModal = ref(false)
 const bandInst = ref<T212Instrument | null>(null)
+const bandPreset = ref<'turning' | null>(null)
 const groupModal = ref(false)
 const groupInst = ref<T212Instrument | null>(null)
 
@@ -271,8 +272,9 @@ function openOrderModal(inst: T212Instrument, side: OrderSide) {
   orderSide.value = side
   orderModal.value = true
 }
-function openBandModal(inst: T212Instrument) {
+function openBandModal(inst: T212Instrument, preset: 'turning' | null = null) {
   bandInst.value = inst
+  bandPreset.value = preset
   bandModal.value = true
 }
 
@@ -443,6 +445,7 @@ onMounted(async () => {
                       卖出
                     </n-button>
                     <n-button size="tiny" type="primary" secondary @click="openBandModal(inst)">波段</n-button>
+                    <n-button size="tiny" type="warning" secondary @click="openBandModal(inst, 'turning')">开启量化</n-button>
                     <n-button size="tiny" quaternary @click="openGroupModal(inst)">+ 分组</n-button>
                     <n-button
                       size="tiny"
@@ -517,6 +520,7 @@ onMounted(async () => {
       :instrument="bandInst"
       :position="bandInst ? posOf(bandInst.ticker) : null"
       :env="env"
+      :preset-mode="bandPreset"
       @submitted="loadOpenOrders"
     />
     <add-to-group-modal v-model:show="groupModal" :instrument="groupInst" @added="groupsStore.load(true)" />

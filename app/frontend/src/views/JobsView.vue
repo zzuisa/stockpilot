@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { h, onMounted, ref } from 'vue'
+import { h, onMounted, onUnmounted, ref } from 'vue'
 import { NButton, NDataTable, NTag } from 'naive-ui'
 import type { DataTableColumns } from 'naive-ui'
 import { jobsApi } from '@/api/endpoints'
@@ -46,7 +46,12 @@ async function trigger(id: string) {
   }
 }
 
-onMounted(load)
+let timer: ReturnType<typeof setInterval> | undefined
+onMounted(() => {
+  load()
+  timer = setInterval(load, 5000)   // 5s 刷新，运行中任务进度实时可见
+})
+onUnmounted(() => timer && clearInterval(timer))
 
 const catalogColumns: DataTableColumns<JobCatalogEntry> = [
   {
@@ -121,7 +126,11 @@ const runColumns: DataTableColumns<JobRun> = [
     key: 'detail',
     className: 'muted',
     ellipsis: { tooltip: true },
-    render: (r) => r.detail ?? '—',
+    // 运行中优先显示实时进度，否则显示结果详情
+    render: (r) =>
+      r.status === 'running' && r.progress
+        ? h('span', { style: 'color:var(--amber)' }, `⏳ ${r.progress}`)
+        : (r.detail ?? '—'),
   },
 ]
 </script>

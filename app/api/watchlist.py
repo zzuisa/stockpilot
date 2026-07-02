@@ -127,6 +127,9 @@ class SymbolAdd(BaseModel):
     extra_email: list[str] = []
     extra_telegram: list[str] = []
     community_priority: str | None = None  # positive | negative | all
+    news_auto: bool | None = None          # 是否自动拉取该股新闻 + 生成精华
+    news_sources: list[str] | None = None  # finnhub | alphavantage
+    news_types: list[str] | None = None    # earnings/announcement/... (见 config.NEWS_TYPES)
 
 
 @router.post("/groups/{group_id}/symbols", status_code=201)
@@ -152,6 +155,32 @@ async def add_symbol(group_id: str, s: SymbolAdd, db=Depends(get_db)):
     return {"ok": True, "symbol": sym, "group_id": group_id}
 
 
+class SymbolNewsConfig(BaseModel):
+    news_auto: bool = False
+    news_sources: list[str] = ["finnhub", "alphavantage"]
+    news_types: list[str] = []             # 空 = 全部类别
+
+
+@router.put("/groups/{group_id}/symbols/{symbol}/news")
+async def update_symbol_news(group_id: str, symbol: str,
+                             body: SymbolNewsConfig, db=Depends(get_db)):
+    """更新单只股票的新闻自动拉取配置(开关/来源/类别),写入 symbol_config。"""
+    item = db.get(WatchlistItem, (symbol.upper(), group_id))
+    if not item:
+        raise HTTPException(404, "symbol 不在该 group")
+    sources = [s for s in body.news_sources if s in config.NEWS_SOURCES]
+    types = [t for t in body.news_types if t in config.NEWS_TYPES]
+    item.symbol_config = {
+        **(item.symbol_config or {}),
+        "news_auto": bool(body.news_auto),
+        "news_sources": sources or list(config.NEWS_SOURCES),
+        "news_types": types,    # 空表示全部,由 config 解析时回退
+    }
+    db.flush()
+    return {"ok": True, "symbol": symbol.upper(),
+            "news_auto": bool(body.news_auto)}
+
+
 @router.delete("/groups/{group_id}/symbols/{symbol}")
 async def remove_symbol(group_id: str, symbol: str, db=Depends(get_db)):
     item = db.get(WatchlistItem, (symbol.upper(), group_id))
@@ -171,6 +200,41 @@ class RecipientUpdate(BaseModel):
     channel: str                      # 'telegram' | 'email'
     recipients: list[str]
     event_types: list[str] = ["daily_report", "signal"]
+
+
+class NotifyRecipient(BaseModel):
+    channel: str                      # 'telegram' | 'email'
+    recipient: str
+    events: list[str] = ["daily_report", "signal"]
+
+
+class NotifyUpdate(BaseModel):
+    recipients: list[NotifyRecipient] = []
+
+
+@router.put("/groups/{group_id}/notify")
+async def update_notify(group_id: str, body: NotifyUpdate, db=Depends(get_db)):
+    """按接收人逐个配置推送(矩阵)。写入 config.recipients 并重建路由。"""
+    grp = db.get(Group, group_id)
+    if not grp:
+        raise HTTPException(404, "group 不存在")
+    recips = []
+    for r in body.recipients:
+        if r.channel not in ("telegram", "email"):
+            raise HTTPException(422, "channel 必须是 telegram | email")
+        if not r.recipient.strip():
+            continue
+        recips.append({"channel": r.channel, "recipient": r.recipient.strip(),
+                       "events": r.events})
+    cfg = dict(grp.config or {})
+    cfg["recipients"] = recips
+    # 同步维护旧字段,便于回退与 YAML 导出
+    cfg["telegram_chat_ids"] = [r["recipient"] for r in recips if r["channel"] == "telegram"]
+    cfg["email_recipients"] = [r["recipient"] for r in recips if r["channel"] == "email"]
+    cfg["notify_channels"] = sorted({r["channel"] for r in recips})
+    grp.config = cfg
+    _rebuild_group_routes(db, grp)
+    return {"ok": True, "count": len(recips)}
 
 
 @router.put("/groups/{group_id}/recipients")

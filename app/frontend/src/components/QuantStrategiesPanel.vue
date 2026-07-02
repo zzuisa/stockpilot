@@ -5,6 +5,7 @@ import { quantApi } from '@/api/endpoints'
 import type { QuantStrategyStatus } from '@/api/types'
 import { useNotify } from '@/composables/useNotify'
 import { apiError } from '@/api/client'
+import { fmtTs } from '@/composables/format'
 
 const emit = defineEmits<{
   manage: [symbol: string, t212Ticker: string]
@@ -123,8 +124,9 @@ onUnmounted(() => {
 
           <!-- 买入方式 -->
           <td class="right">
-            <n-tag size="tiny" :bordered="false" :type="s.params.buy_mode === 'market' ? 'info' : 'default'">
-              {{ s.params.buy_mode === 'market' ? '市价' : 'RSI' }}
+            <n-tag size="tiny" :bordered="false"
+              :type="s.params.buy_mode === 'turning' ? 'warning' : s.params.buy_mode === 'market' ? 'info' : 'default'">
+              {{ s.params.buy_mode === 'turning' ? '拐点' : s.params.buy_mode === 'market' ? '市价' : 'RSI' }}
             </n-tag>
           </td>
 
@@ -161,6 +163,7 @@ onUnmounted(() => {
       class="last-action"
     >
       <span class="tag-sym">{{ s.symbol }}</span>
+      <span class="mono faint" style="font-size:10px">{{ fmtTs(s.last_check).slice(5, 16) }}</span>
       {{ s.last_action }}
     </div>
   </div>

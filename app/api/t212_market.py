@@ -11,6 +11,7 @@ from sqlalchemy import desc, select
 import settings
 from db import get_db, get_session
 from models import News, Price, T212CommunityPost, WatchlistItem, T212WatchlistItem
+from trades import record_trade
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/t212", tags=["t212_market"])
@@ -18,10 +19,9 @@ router = APIRouter(prefix="/api/v1/t212", tags=["t212_market"])
 # ── 工具 ─────────────────────────────────────────────────────────────────────
 
 def _client():
-    if not settings.t212_enabled:
-        raise HTTPException(503, "T212 未配置")
-    from t212.client import T212
-    return T212()
+    """返回激活账户的 T212 客户端"""
+    from t212.account_cache import get_client
+    return get_client()
 
 
 # 全量标的缓存 (TTL 1h)
@@ -66,6 +66,26 @@ def _normalize_position(p: dict) -> dict:
         "totalCost": wi.get("totalCost"),
         "currentValue": wi.get("currentValue"),
         "pnlCurrency": wi.get("currency", "EUR"),
+    }
+
+
+# ── 实时现金/账户 ─────────────────────────────────────────────────────────────
+
+@router.get("/cash")
+def get_cash():
+    """实时账户现金(账户主币种)。total=总资产, free=可用, ppl=浮动盈亏。"""
+    try:
+        c = _client().cash() or {}
+    except Exception as e:
+        log.warning("cash 获取失败: %s", e)
+        raise HTTPException(502, f"T212 获取现金失败: {e}")
+    return {
+        "free": c.get("free"),
+        "total": c.get("total"),
+        "invested": c.get("invested"),
+        "ppl": c.get("ppl"),
+        "result": c.get("result"),
+        "blocked": c.get("blocked"),
     }
 
 
@@ -288,6 +308,95 @@ def get_watchlist_quotes(db=Depends(get_db)):
     return out
 
 
+# ── 历史日线（近 N 天，供行情详情 K 线；数据由夜间采集入库） ─────────────────────
+
+@router.get("/prices/{symbol}")
+def price_history(symbol: str, days: int = Query(30, ge=5, le=365), db=Depends(get_db)):
+    """返回标的近 N 天日线 OHLCV（用于行情详情 K 线图 + 框选归因）。"""
+    sym = symbol.split("_")[0].upper()
+    since = datetime.now(timezone.utc) - timedelta(days=days)
+    rows = db.execute(
+        select(Price.ts, Price.open, Price.high, Price.low, Price.close, Price.volume)
+        .where(Price.symbol == sym, Price.interval == "1d", Price.ts >= since)
+        .order_by(Price.ts)).all()
+    return {"symbol": sym, "candles": [
+        {"t": r[0].isoformat(), "o": r[1], "h": r[2], "l": r[3], "c": r[4], "v": r[5]}
+        for r in rows]}
+
+
+# ── 按需分钟级 K 线（yfinance 实时拉取 + 60s 内存缓存），供详情图缩放到分钟 ─────────
+_INTRADAY_ALLOWED = {"1m", "2m", "5m", "15m", "30m", "60m", "1h", "1d"}
+# yfinance 各周期回溯上限（天）
+_INTRADAY_MAXDAYS = {"1m": 7, "2m": 60, "5m": 60, "15m": 60, "30m": 60,
+                     "60m": 730, "1h": 730, "1d": 3650}
+_intraday_cache: dict = {}          # key=(sym,interval,days) → {"ts":epoch,"data":dict}
+_INTRADAY_TTL = 60.0
+
+
+def _yf_symbol_for(sym: str) -> str:
+    """从 watchlist 取 yf_symbol 覆盖（德股等需交易所后缀），无则用 sym 本身。"""
+    try:
+        with get_session() as s:
+            import config
+            for d in config.active_symbols(s):
+                if d["symbol"] == sym:
+                    return d.get("yf_symbol") or sym
+    except Exception:
+        pass
+    return sym
+
+
+@router.get("/prices/{symbol}/intraday")
+async def price_intraday(
+    symbol: str,
+    interval: str = Query("5m"),
+    days: int = Query(30, ge=1, le=730),
+):
+    """按需分钟/小时级 K 线（yfinance 实时）。interval ∈ 1m/2m/5m/15m/30m/60m/1h/1d，
+    days 按该周期 yfinance 回溯上限自动夹取。服务端 60s 缓存以控频。"""
+    sym = symbol.split("_")[0].upper()
+    if interval not in _INTRADAY_ALLOWED:
+        raise HTTPException(400, f"interval 必须是 {sorted(_INTRADAY_ALLOWED)}")
+    days = min(days, _INTRADAY_MAXDAYS.get(interval, 60))
+    key = (sym, interval, days)
+    now = time.time()
+    hit = _intraday_cache.get(key)
+    if hit and now - hit["ts"] < _INTRADAY_TTL:
+        return hit["data"]
+
+    yf_sym = _yf_symbol_for(sym)
+
+    def _fetch():
+        from collectors.prices import _download
+        frames = _download([sym], yf_map={sym: yf_sym},
+                           period=f"{days}d", interval=interval)
+        df = frames.get(sym)
+        candles = []
+        if df is not None and not df.empty:
+            for ts, row in df.iterrows():
+                try:
+                    o, h, l, c, v = (row["Open"], row["High"], row["Low"],
+                                     row["Close"], row.get("Volume"))
+                    if c != c:            # NaN 收盘 → 跳过（停牌/空档）
+                        continue
+                    pyts = ts.to_pydatetime() if hasattr(ts, "to_pydatetime") else ts
+                    candles.append({
+                        "t": pyts.isoformat(),
+                        "o": None if o != o else round(float(o), 4),
+                        "h": None if h != h else round(float(h), 4),
+                        "l": None if l != l else round(float(l), 4),
+                        "c": round(float(c), 4),
+                        "v": 0 if v is None or v != v else int(v),
+                    })
+                except Exception:
+                    continue
+        return {"symbol": sym, "interval": interval, "candles": candles}
+
+    data = await asyncio.to_thread(_fetch)
+    _intraday_cache[key] = {"ts": now, "data": data}
+    return data
+
+
 # ── 实时现价（前端按金额→股数换算用，与下单换算同源） ──────────────────────────
 
 @router.get("/quote/{ticker}")
@@ -315,6 +424,7 @@ def place_order(body: dict):
     side = (body.get("side") or "buy").lower()
     quantity = body.get("quantity")
     value = body.get("value")
+    currency = (body.get("currency") or "USD").upper()
 
     if not ticker:
         raise HTTPException(400, "ticker 必填")
@@ -333,7 +443,7 @@ def place_order(body: dict):
                 raise HTTPException(400, "卖出 quantity 须为正数")
             result = client.market_order(ticker, -qty)
         elif value is not None:
-            # 后端实时取现价换算股数，仅用 quantity 下单
+            # 后端实时取现价换算股数，仅用 quantity 下单（currency 仅用于前端展示/余额提示）
             result = client.market_order_value(ticker, float(value))
         else:
             result = client.market_order(ticker, float(quantity))
@@ -343,8 +453,20 @@ def place_order(body: dict):
         raise HTTPException(400, str(e))
     except Exception as e:
         log.warning("T212 order failed: %s", e)
+        if "insufficient-free-for-stocks-buy" in str(e) or "Insufficient funds" in str(e):
+            raise HTTPException(400,
+                "资金不足：买入该美股需要美元(USD)余额，而账户当前为欧元。"
+                "请先在 T212 App 内把 EUR 兑换为 USD（即可避免每单换汇费），或减小买入金额。")
         raise HTTPException(502, f"T212 下单失败: {e}")
 
+    record_trade(source="manual", side=side, t212_ticker=ticker,
+                 order_type="market",
+                 quantity=abs(float(result.get("filledQuantity") or result.get("quantity") or 0)) or None,
+                 price=result.get("fillResult", {}).get("fillPrice") if isinstance(result.get("fillResult"), dict) else None,
+                 value_eur=float(value) if value is not None else None,
+                 currency=(currency if value is not None else None),
+                 reason="手动市价", status="submitted",
+                 order_id=result.get("id"))
     return {"env": env, "result": result}
 
 
@@ -400,6 +522,9 @@ def place_limit_order(body: dict):
         log.warning("T212 limit order failed: %s", e)
         raise HTTPException(502, f"T212 限价单失败: {e}")
 
+    record_trade(source="manual", side=side, t212_ticker=ticker,
+                 order_type="limit", quantity=abs(qty), price=float(limit_price),
+                 reason="手动限价", status="submitted", order_id=result.get("id"))
     return {"env": settings.T212_ENV or "demo", "result": result}
 
 
@@ -440,6 +565,9 @@ def place_stop_order(body: dict):
         log.warning("T212 stop order failed: %s", e)
         raise HTTPException(502, f"T212 止损单失败: {e}")
 
+    record_trade(source="manual", side=side, t212_ticker=ticker,
+                 order_type="stop", quantity=abs(qty), price=float(stop_price),
+                 reason="手动止损", status="submitted", order_id=result.get("id"))
     return {"env": settings.T212_ENV or "demo", "result": result}
 
 
@@ -493,6 +621,10 @@ def place_band(body: dict):
             raise HTTPException(400, "sellQty 须为正数")
         try:
             results["sell_limit"] = client.limit_order(ticker, -sq, float(sell_price), time_val)
+            record_trade(source="manual", side="sell", t212_ticker=ticker,
+                         order_type="band_sell", quantity=sq, price=float(sell_price),
+                         reason="波段止盈", status="submitted",
+                         order_id=results["sell_limit"].get("id"))
         except Exception as e:
             log.warning("band sell limit failed: %s", e)
             raise HTTPException(502, f"卖出限价单失败: {e}")
@@ -503,6 +635,10 @@ def place_band(body: dict):
             raise HTTPException(400, "buyQty 须为正数")
         try:
             results["buy_limit"] = client.limit_order(ticker, bq, float(buy_price), time_val)
+            record_trade(source="manual", side="buy", t212_ticker=ticker,
+                         order_type="band_buy", quantity=bq, price=float(buy_price),
+                         reason="波段抄底", status="submitted",
+                         order_id=results["buy_limit"].get("id"))
         except Exception as e:
             log.warning("band buy limit failed: %s", e)
             # 若卖单已成功，把已下部分一起返回，让前端知道部分成功

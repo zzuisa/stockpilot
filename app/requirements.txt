@@ -10,6 +10,10 @@ pandas==2.3.3
 numpy==2.2.6
 pandas-ta==0.4.71b0
 openai>=1.55.0
+# 价格变动多 Agent 归因 (LangGraph 编排 + LangChain ChatOpenAI 接 SiliconFlow)
+langchain>=0.3.0
+langchain-openai>=0.2.0
+langgraph>=0.2.0
 # vectorbt==0.28.5  # 回测专用,按需手动安装: pip install vectorbt==0.28.5
 feedparser==6.0.11
 websockets>=13.0

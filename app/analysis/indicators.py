@@ -74,6 +74,45 @@ def compute_symbol(db, symbol: str) -> dict | None:
     return last
 
 
+def ensure_symbol(symbol: str, yf_symbol: str | None = None) -> dict:
+    """按需为单个标的补全日线 + 计算技术指标(研究模块缺数据时调用)。
+    返回 {steps:[{name,status(done|failed),detail}], ready:bool}，供前端流程可视化。
+    yf_symbol 缺省时优先用 watchlist 的映射，否则用 symbol 本身(美股代码通常即可)。"""
+    from sqlalchemy import func
+    from collectors import prices
+    from db import get_session
+    from models import WatchlistItem
+    sym = symbol.upper()
+    steps: list[dict] = []
+    with get_session() as db:
+        if not yf_symbol:
+            w = db.query(WatchlistItem).filter(WatchlistItem.symbol == sym).first()
+            yf_symbol = ((w.symbol_config or {}).get("yf_symbol") if w else None) or sym
+        npx = db.execute(select(func.count()).select_from(Price)
+                         .where(Price.symbol == sym,
+                                Price.interval == "1d")).scalar() or 0
+        if npx < 210:
+            res = prices.fetch_daily([sym], db, period="1y", yf_map={sym: yf_symbol})
+            got = res.get("rows", 0)
+            if got <= 0 or sym in res.get("missing", []):
+                steps.append({"name": "采集日线价格", "status": "failed",
+                              "detail": f"yfinance 无 {yf_symbol} 数据(代码或交易所后缀有误)"})
+                return {"steps": steps, "ready": False}
+            steps.append({"name": "采集日线价格", "status": "done",
+                          "detail": f"新增 {got} 根日线"})
+        else:
+            steps.append({"name": "采集日线价格", "status": "done",
+                          "detail": f"已有 {npx} 根日线"})
+        r = compute_symbol(db, sym)
+        if r:
+            steps.append({"name": "计算技术指标", "status": "done",
+                          "detail": "RSI/MACD/SMA/布林带/ATR"})
+            return {"steps": steps, "ready": True}
+        steps.append({"name": "计算技术指标", "status": "failed",
+                      "detail": "日线不足 30 根"})
+        return {"steps": steps, "ready": False}
+
+
 def compute_all(db) -> dict:
     import config
     out = {}

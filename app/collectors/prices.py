@@ -63,7 +63,12 @@ def _download(symbols: list[str], yf_map: dict[str, str] | None = None,
         return {}
     out = {}
     if len(yf_tickers) == 1:
-        out[rev[yf_tickers[0]]] = df
+        # group_by="ticker" 单标的时列为 MultiIndex (ticker, field)，降为扁平
+        # OHLCV，否则 _upsert_frame 取 df["Close"] 会 KeyError(['Close'])
+        single = df
+        if isinstance(single.columns, pd.MultiIndex):
+            single = single.droplevel(0, axis=1)
+        out[rev[yf_tickers[0]]] = single
     else:
         for yt in yf_tickers:
             if yt in df.columns.get_level_values(0):

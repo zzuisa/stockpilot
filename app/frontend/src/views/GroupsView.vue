@@ -5,14 +5,16 @@ import {
   NCheckboxGroup,
   NCheckbox,
   NDataTable,
-  NDynamicTags,
   NInput,
   NModal,
+  NSelect,
+  NSwitch,
+  NTag,
   useDialog,
 } from 'naive-ui'
 import type { DataTableColumns } from 'naive-ui'
-import { groupsApi } from '@/api/endpoints'
-import type { Group, GroupDetail, GroupSymbol } from '@/api/types'
+import { groupsApi, notifyApi } from '@/api/endpoints'
+import type { Group, GroupDetail, GroupRecipient, GroupSymbol, NotifyRoute } from '@/api/types'
 import { apiError } from '@/api/client'
 import { useGroupsStore } from '@/stores/groups'
 import { useNotify } from '@/composables/useNotify'
@@ -36,11 +38,68 @@ const newG = ref({ id: '', name: '', description: '' })
 // 标的添加
 const newSym = ref({ symbol: '', t212_ticker: '' })
 
-// 接收者
-const tgList = ref<string[]>([])
-const tgEvents = ref<string[]>(['daily_report', 'signal'])
-const emailList = ref<string[]>([])
-const emailEvents = ref<string[]>(['daily_report'])
+// 单股新闻自动拉取配置
+const NEWS_SOURCE_OPTIONS = [
+  { label: 'Finnhub', value: 'finnhub' },
+  { label: 'AlphaVantage', value: 'alphavantage' },
+]
+const NEWS_TYPE_OPTIONS = [
+  { label: '财报/业绩', value: 'earnings' },
+  { label: '公司公告', value: 'announcement' },
+  { label: '行业/竞争', value: 'industry' },
+  { label: '宏观经济', value: 'macro' },
+  { label: '监管/地缘', value: 'regulatory' },
+  { label: '分析师评级', value: 'analyst' },
+  { label: '供应链/运营', value: 'supply_chain' },
+  { label: '公司治理', value: 'governance' },
+]
+const showNews = ref(false)
+const newsSym = ref('')
+const newsCfg = ref<{ news_auto: boolean; news_sources: string[]; news_types: string[] }>({
+  news_auto: false,
+  news_sources: ['finnhub', 'alphavantage'],
+  news_types: [],
+})
+
+function openNewsConfig(s: GroupSymbol) {
+  const cfg = (s.symbol_config ?? {}) as Record<string, unknown>
+  newsSym.value = s.symbol
+  newsCfg.value = {
+    news_auto: Boolean(cfg.news_auto),
+    news_sources: Array.isArray(cfg.news_sources) && cfg.news_sources.length
+      ? (cfg.news_sources as string[])
+      : ['finnhub', 'alphavantage'],
+    news_types: Array.isArray(cfg.news_types) ? (cfg.news_types as string[]) : [],
+  }
+  showNews.value = true
+}
+
+async function saveNewsConfig() {
+  if (!detail.value) return
+  try {
+    await groupsApi.setSymbolNews(detail.value.id, newsSym.value, newsCfg.value)
+    notify.ok(`${newsSym.value} 新闻配置已保存`)
+    showNews.value = false
+    await selectGroup({ id: detail.value.id } as Group)
+  } catch (e) {
+    notify.err(`保存失败: ${apiError(e)}`)
+  }
+}
+
+// 推送接收人矩阵（每接收人独立事件类型）
+const recipients = ref<GroupRecipient[]>([])
+const routesPreview = ref<NotifyRoute[]>([])
+
+const EVENT_TYPES = [
+  { label: '日报', value: 'daily_report' },
+  { label: '信号', value: 'signal' },
+  { label: '新闻冲击', value: 'news_shock' },
+  { label: '成交结果', value: 'order_result' },
+]
+const CHANNEL_OPTIONS = [
+  { label: 'Telegram', value: 'telegram' },
+  { label: 'Email', value: 'email' },
+]
 
 async function reloadGroups() {
   await store.load(true)
@@ -54,13 +113,55 @@ async function selectGroup(g: Group) {
     detail.value = d
     editName.value = d.name
     editDesc.value = d.description ?? ''
-    const cfg = d.config ?? {}
-    tgList.value = [...(cfg.telegram_chat_ids ?? [])]
-    emailList.value = [...(cfg.email_recipients ?? [])]
-    tgEvents.value = [...(cfg.notify_on ?? ['daily_report', 'signal'])]
-    emailEvents.value = [...(cfg.notify_on ?? ['daily_report'])]
+    recipients.value = buildRecipients(d)
+    await loadRoutes(g.id)
   } catch (e) {
     notify.err(`加载分组详情失败: ${apiError(e)}`)
+  }
+}
+
+/** 从 config 还原接收人矩阵：优先 recipients，否则由旧字段合成 */
+function buildRecipients(d: GroupDetail): GroupRecipient[] {
+  const cfg = d.config ?? {}
+  if (cfg.recipients?.length) {
+    return cfg.recipients.map((r) => ({
+      channel: r.channel, recipient: r.recipient, events: [...(r.events ?? [])],
+    }))
+  }
+  const on = cfg.notify_on ?? ['daily_report', 'signal']
+  const out: GroupRecipient[] = []
+  for (const r of cfg.telegram_chat_ids ?? []) out.push({ channel: 'telegram', recipient: r, events: [...on] })
+  for (const r of cfg.email_recipients ?? []) out.push({ channel: 'email', recipient: r, events: [...on] })
+  return out
+}
+
+async function loadRoutes(gid: string) {
+  try {
+    routesPreview.value = await notifyApi.routes(gid)
+  } catch {
+    routesPreview.value = []
+  }
+}
+
+function addRecipient() {
+  recipients.value.push({ channel: 'telegram', recipient: '', events: ['daily_report', 'signal'] })
+}
+function removeRecipient(i: number) {
+  recipients.value.splice(i, 1)
+}
+
+async function saveNotify() {
+  if (!detail.value) return
+  const clean = recipients.value
+    .map((r) => ({ ...r, recipient: r.recipient.trim() }))
+    .filter((r) => r.recipient)
+  try {
+    await groupsApi.setNotify(detail.value.id, clean)
+    notify.ok('推送配置已保存')
+    await loadRoutes(detail.value.id)
+    await reloadGroups()
+  } catch (e) {
+    notify.err(`保存失败: ${apiError(e)}`)
   }
 }
 
@@ -159,21 +260,6 @@ function removeSymbol(sym: string) {
   })
 }
 
-async function saveRecipients(channel: 'telegram' | 'email') {
-  if (!detail.value) return
-  try {
-    await groupsApi.setRecipients(detail.value.id, {
-      channel,
-      recipients: channel === 'telegram' ? tgList.value : emailList.value,
-      event_types: channel === 'telegram' ? tgEvents.value : emailEvents.value,
-    })
-    notify.ok(`${channel === 'telegram' ? 'Telegram' : 'Email'} 接收者已保存`)
-    await reloadGroups()
-  } catch (e) {
-    notify.err(`保存失败: ${apiError(e)}`)
-  }
-}
-
 async function syncYaml() {
   try {
     await groupsApi.syncYaml()
@@ -216,6 +302,19 @@ const symColumns: DataTableColumns<GroupSymbol> = [
     title: '标签',
     key: 'tags',
     render: (s) => (s.tags ?? []).join(', ') || '—',
+  },
+  {
+    title: '新闻',
+    key: 'news',
+    width: 96,
+    render: (s) => {
+      const on = Boolean((s.symbol_config as Record<string, unknown> | undefined)?.news_auto)
+      return h(
+        NButton,
+        { size: 'tiny', secondary: true, type: on ? 'success' : 'default', onClick: () => openNewsConfig(s) },
+        { default: () => (on ? '自动 ✓' : '未开启') },
+      )
+    },
   },
   {
     title: '操作',
@@ -305,36 +404,91 @@ const symColumns: DataTableColumns<GroupSymbol> = [
           </div>
         </panel-card>
 
-        <panel-card :title="`Telegram 接收者 (${tgList.length})`">
-          <n-dynamic-tags v-model:value="tgList" />
-          <div class="events-row">
-            <span class="faint">推送事件:</span>
-            <n-checkbox-group v-model:value="tgEvents">
-              <n-checkbox value="daily_report" label="日报" />
-              <n-checkbox value="signal" label="信号" />
-              <n-checkbox value="order_result" label="成交" />
-            </n-checkbox-group>
-            <n-button size="tiny" quaternary style="margin-left: auto" @click="saveRecipients('telegram')">
-              保存
-            </n-button>
+        <panel-card :title="`推送接收人 (${recipients.length})`">
+          <template #header>
+            <span class="grow" />
+            <n-button size="tiny" type="primary" secondary @click="saveNotify">保存推送</n-button>
+          </template>
+          <div v-if="!recipients.length" class="faint" style="font-size: 12px; padding: 6px 0">
+            暂无接收人，点下方「+ 接收人」添加
           </div>
+          <div v-for="(r, i) in recipients" :key="i" class="recip-row">
+            <n-select v-model:value="r.channel" :options="CHANNEL_OPTIONS" size="small" style="width: 110px" />
+            <n-input
+              v-model:value="r.recipient"
+              size="small"
+              :placeholder="r.channel === 'telegram' ? 'Chat ID' : 'email@x.com'"
+              style="flex: 1; min-width: 130px"
+            />
+            <n-checkbox-group v-model:value="r.events" class="ev-group">
+              <n-checkbox v-for="e in EVENT_TYPES" :key="e.value" :value="e.value" :label="e.label" />
+            </n-checkbox-group>
+            <n-button size="tiny" type="error" quaternary @click="removeRecipient(i)">✕</n-button>
+          </div>
+          <n-button size="small" dashed block style="margin-top: 8px" @click="addRecipient">
+            + 接收人
+          </n-button>
         </panel-card>
 
-        <panel-card :title="`Email 接收者 (${emailList.length})`">
-          <n-dynamic-tags v-model:value="emailList" />
-          <div class="events-row">
-            <span class="faint">推送事件:</span>
-            <n-checkbox-group v-model:value="emailEvents">
-              <n-checkbox value="daily_report" label="日报" />
-              <n-checkbox value="signal" label="信号" />
-            </n-checkbox-group>
-            <n-button size="tiny" quaternary style="margin-left: auto" @click="saveRecipients('email')">
-              保存
-            </n-button>
+        <panel-card :title="`生效路由预览 (${routesPreview.length})`">
+          <div v-if="!routesPreview.length" class="faint" style="font-size: 12px">
+            保存推送后将按接收人 × 事件类型展开为路由
           </div>
+          <table v-else class="routes-tbl">
+            <thead>
+              <tr><th>标的</th><th>渠道</th><th>接收人</th><th>事件类型</th></tr>
+            </thead>
+            <tbody>
+              <tr v-for="rt in routesPreview" :key="rt.id">
+                <td>{{ rt.symbol || '(组级)' }}</td>
+                <td>
+                  <n-tag size="tiny" :bordered="false" :type="rt.channel === 'telegram' ? 'success' : 'warning'">
+                    {{ rt.channel }}
+                  </n-tag>
+                </td>
+                <td class="mono muted ellip">{{ rt.recipient }}</td>
+                <td class="faint mono">{{ (rt.event_types || []).join(', ') }}</td>
+              </tr>
+            </tbody>
+          </table>
         </panel-card>
       </template>
     </div>
+
+    <!-- 单股新闻自动拉取配置弹窗 -->
+    <n-modal
+      v-model:show="showNews"
+      preset="card"
+      :title="`新闻自动拉取 · ${newsSym}`"
+      style="width: 460px"
+      :bordered="false"
+    >
+      <div class="field news-switch">
+        <label>自动拉取并推送精华</label>
+        <n-switch v-model:value="newsCfg.news_auto" />
+      </div>
+      <div class="field">
+        <label>采集来源</label>
+        <n-checkbox-group v-model:value="newsCfg.news_sources" class="ev-group">
+          <n-checkbox v-for="o in NEWS_SOURCE_OPTIONS" :key="o.value" :value="o.value" :label="o.label" />
+        </n-checkbox-group>
+      </div>
+      <div class="field">
+        <label>关注类别（不选 = 全部）</label>
+        <n-checkbox-group v-model:value="newsCfg.news_types" class="ev-group">
+          <n-checkbox v-for="o in NEWS_TYPE_OPTIONS" :key="o.value" :value="o.value" :label="o.label" />
+        </n-checkbox-group>
+      </div>
+      <div class="faint" style="font-size: 12px; margin-top: 6px">
+        开启后，系统按所选来源/类别拉取该股新闻，经 LLM 高信号筛选后，仅推送「精华总结 + 投资判断」。
+      </div>
+      <template #footer>
+        <div class="flex gap-8">
+          <n-button type="primary" @click="saveNewsConfig">保存</n-button>
+          <n-button quaternary @click="showNews = false">取消</n-button>
+        </div>
+      </template>
+    </n-modal>
 
     <!-- 新建分组弹窗 -->
     <n-modal
@@ -436,12 +590,59 @@ const symColumns: DataTableColumns<GroupSymbol> = [
   gap: 6px;
   margin-top: 12px;
 }
+.news-switch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.news-switch label {
+  margin-bottom: 0;
+}
 .events-row {
   display: flex;
   align-items: center;
   gap: 12px;
   margin-top: 10px;
   font-size: 12px;
+}
+.recip-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--panel2);
+}
+.recip-row:last-of-type {
+  border-bottom: none;
+}
+.ev-group {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.routes-tbl {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.routes-tbl th {
+  text-align: left;
+  color: var(--faint);
+  font-weight: 500;
+  font-size: 11px;
+  padding: 5px 6px;
+  border-bottom: 1px solid var(--line);
+}
+.routes-tbl td {
+  padding: 5px 6px;
+  border-bottom: 1px solid var(--panel2);
+}
+.ellip {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 :deep(.tag-amber) {
   font-family: var(--mono);
