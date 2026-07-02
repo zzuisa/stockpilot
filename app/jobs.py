@@ -166,48 +166,52 @@ async def job_news():
     return res
 
 
+def _brief_events_for_symbol(sc: dict) -> list[dict]:
+    """为单只股票生成精华并落库，返回 news_shock 推送事件(无实质内容返回[])。
+    供 job_news_brief(全量) 与 job_ensure_symbol(单标的) 复用。"""
+    from analysis import news_brief
+    from models import NewsBrief
+    sym = sc["symbol"]
+    with get_session() as s:
+        brief = news_brief.build_symbol_brief(s, sc)
+        if not brief or brief["item_count"] == 0:
+            return []
+        body_md = brief["body_md"]
+        payload = {
+            "subject": f"{sym} 新闻精华 · {brief['sentiment']}",
+            "body_md": body_md,
+            "body_html": body_md.replace("\n", "<br>"),
+        }
+        record_update(
+            s, "news_brief", sym,
+            f"{sym}: 新闻精华 {brief['item_count']} 条 · {brief['sentiment']}",
+            {"id": brief["id"], "sentiment": brief["sentiment"]})
+        s.flush()
+        events = [{"event_type": "news_shock", "symbol": sym,
+                   "group_id": gid, "payload": payload}
+                  for gid in brief["groups"]]
+    with get_session() as s2:
+        nb = s2.get(NewsBrief, brief["id"])
+        if nb:
+            nb.pushed = True
+    return events
+
+
 async def job_news_brief():
     """逐只开启 news_auto 的股票生成新闻精华(LLM 高信号筛选 + 投资判断),
     按其所属分组以 news_shock 事件推送(复用 notify_routes + 24h 防重发)。
     只推送有实质内容的股票。"""
 
     def _build() -> list[dict]:
-        from analysis import news_brief
         events: list[dict] = []
         with get_session() as s:
             syms = config.news_symbols(s)
         for i, sc in enumerate(syms, 1):
-            sym = sc["symbol"]
-            progress(f"生成新闻精华 {sym} ({i}/{len(syms)})")
+            progress(f"生成新闻精华 {sc['symbol']} ({i}/{len(syms)})")
             try:
-                with get_session() as s:          # 每标的独立短会话
-                    brief = news_brief.build_symbol_brief(s, sc)
-                    if not brief or brief["item_count"] == 0:
-                        continue
-                    body_md = brief["body_md"]
-                    payload = {
-                        "subject": f"{sym} 新闻精华 · {brief['sentiment']}",
-                        "body_md": body_md,
-                        "body_html": body_md.replace("\n", "<br>"),
-                    }
-                    record_update(
-                        s, "news_brief", sym,
-                        f"{sym}: 新闻精华 {brief['item_count']} 条 · "
-                        f"{brief['sentiment']}",
-                        {"id": brief["id"], "sentiment": brief["sentiment"]})
-                    s.flush()
-                    # 该股所属每个分组各发一个 news_shock 事件(路由按收件人去重)
-                    for gid in brief["groups"]:
-                        events.append({"event_type": "news_shock", "symbol": sym,
-                                       "group_id": gid, "payload": payload})
-                    # 标记已推送
-                    with get_session() as s2:
-                        from models import NewsBrief
-                        nb = s2.get(NewsBrief, brief["id"])
-                        if nb:
-                            nb.pushed = True
+                events.extend(_brief_events_for_symbol(sc))
             except Exception as e:
-                log.warning("news_brief %s 失败: %s", sym, e)
+                log.warning("news_brief %s 失败: %s", sc["symbol"], e)
         return events
 
     async def work():
@@ -218,6 +222,96 @@ async def job_news_brief():
         return {"briefs": len({e["symbol"] for e in events}),
                 "events": len(events)}
     return await _run("news_brief", work)
+
+
+def _collect_community_symbol(sym: str) -> int:
+    """为单只股票即时采集 T212 社区帖(复用 collect_for_watchlist 的入库逻辑)。"""
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
+    from t212.community import T212Community, _parse_ts
+    from models import T212CommunityPost
+    cli = T212Community()
+    total = 0
+    with get_session() as db:
+        for p in cli.search_symbol(sym):
+            stmt = pg_insert(T212CommunityPost).values(
+                topic_id=p["topic_id"], post_id=p["post_id"], symbol=sym,
+                author=p["author"], content=p["content"],
+                published=_parse_ts(p["published"]), likes=p["likes"] or 0,
+            ).on_conflict_do_nothing(index_elements=["post_id"])
+            total += db.execute(stmt).rowcount or 0
+    return total
+
+
+async def job_ensure_symbol(symbol: str):
+    """新标的加入自选后即时补全数据：日线(1y 回填)+技术指标、当日分钟线，
+    并按该标的有效配置补新闻(news_auto)与社区帖(t212_community)，开启新闻时生成并推送精华。
+    使新标的立刻具备图表 / 指标 / 情绪 / 建议所需数据，不必等夜间调度。"""
+    sym = symbol.upper()
+
+    def _fill():
+        from analysis import indicators
+        from collectors import news, prices
+        out: dict = {}
+        # 1) 日线 + 技术指标(缺则回填 1 年)
+        try:
+            ens = indicators.ensure_symbol(sym)
+            out["prices_indicators"] = "ready" if ens.get("ready") else "partial"
+        except Exception as e:
+            log.warning("ensure_symbol prices/indicators %s 失败: %s", sym, e)
+            out["prices_indicators"] = "failed"
+        # 解析该标的有效配置(新闻/社区/来源/yf 映射)
+        sc = None
+        with get_session() as s:
+            for d in config.active_symbols(s):
+                if d["symbol"] == sym:
+                    sc = dict(d)
+                    break
+        if not sc:
+            return out, None
+        yf_map = {sym: sc.get("yf_symbol") or sym}
+        # 2) 当日分钟线(实时/详情用)
+        try:
+            with get_session() as s:
+                out["intraday"] = prices.fetch_intraday([sym], s, yf_map=yf_map)
+        except Exception as e:
+            log.warning("ensure_symbol intraday %s 失败: %s", sym, e)
+        # 3) 新闻(仅 news_auto，按配置来源)
+        if sc.get("news_auto"):
+            try:
+                with get_session() as s:
+                    nn = 0
+                    if "finnhub" in sc["news_sources"]:
+                        nn += news.fetch_finnhub([sym], s)
+                    if "alphavantage" in sc["news_sources"]:
+                        nn += news.fetch_alphavantage([sym], s)
+                    out["news"] = nn
+            except Exception as e:
+                log.warning("ensure_symbol news %s 失败: %s", sym, e)
+        # 4) 社区帖(仅 t212_community)
+        if sc.get("t212_community"):
+            try:
+                out["community"] = _collect_community_symbol(sym)
+            except Exception as e:
+                log.warning("ensure_symbol community %s 失败: %s", sym, e)
+        return out, sc
+
+    async def work():
+        out, sc = await asyncio.to_thread(_fill)
+        # 5) 开启新闻的标的：生成并推送精华
+        if sc and sc.get("news_auto"):
+            try:
+                events = await asyncio.to_thread(_brief_events_for_symbol, sc)
+                if events:
+                    from notify import get_router
+                    await get_router().dispatch_events(events)
+                    out["brief"] = "pushed"
+            except Exception as e:
+                log.warning("ensure_symbol brief %s 失败: %s", sym, e)
+        with get_session() as s:
+            record_update(s, "data", sym, f"{sym}: 新标的数据已补全", out)
+        return out
+
+    return await _run("ensure_symbol", work)
 
 
 async def job_sentiment():

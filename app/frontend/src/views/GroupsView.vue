@@ -230,7 +230,7 @@ async function addSymbol() {
       symbol: newSym.value.symbol.toUpperCase(),
       t212_ticker: newSym.value.t212_ticker || null,
     })
-    notify.ok('标的已添加')
+    notify.ok('标的已添加，正在后台补全数据（日线/指标/新闻等）…')
     newSym.value = { symbol: '', t212_ticker: '' }
     await selectGroup({ id: detail.value.id } as Group)
     await reloadGroups()
