@@ -146,18 +146,57 @@ def fetch_alphavantage(symbols: list[str], db, limit: int = 50,
     return n
 
 
+def _parse_futu_ts(v):
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(str(v), fmt).replace(tzinfo=timezone.utc)
+        except (ValueError, TypeError):
+            continue
+    return None
+
+
+def fetch_futu(sym_cfg: dict, db, n: int = 15) -> int:
+    """富途资讯(关键词搜)：非美股(德股/港股/A股/日股)优质源。OpenD 不可达时静默跳过。
+    sym_cfg 来自 config.news_symbols 的元素(含 symbol/news_keyword)。"""
+    from analysis import futu_skills
+    if not futu_skills.available():
+        return 0
+    import config
+    sym = sym_cfg["symbol"]
+    kw = config.futu_keyword(sym_cfg)
+    data = futu_skills.search_news(kw, sub_type="NEWS", n=n)
+    if not isinstance(data, dict) or data.get("unavailable"):
+        return 0
+    cnt = 0
+    for art in (data.get("data") or []):
+        cnt += _insert(
+            db, symbol=sym, source="futu",
+            source_name=art.get("source") or "富途资讯",
+            relevance=0.7,
+            url=art.get("url"), title=art.get("title"),
+            summary=(art.get("title") or "")[:2000],
+            published=_parse_futu_ts(art.get("publish_time")),
+        )
+    return cnt
+
+
 def collect_all(db) -> dict:
     """仅为开启了 news_auto 的标的、且仅其各自配置的来源采集新闻(不再无差别全量)。
-    RSS 宏观源由 defaults.rss_macro 全局开关控制(默认开)。"""
+    非美股优先追加富途资讯源；RSS 宏观源由 defaults.rss_macro 全局开关控制(默认开)。"""
     import config
     syms = config.news_symbols(db)
     # 按来源分桶:只把该来源出现在标的 news_sources 里的标的纳入对应来源
     finnhub_syms = [s["symbol"] for s in syms if "finnhub" in s["news_sources"]]
     av_syms = [s["symbol"] for s in syms if "alphavantage" in s["news_sources"]]
+    # 富途:非美股自动启用，或标的显式把 futu 放进 news_sources
+    futu_syms = [s for s in syms
+                 if config.market_of(s) != "US" or "futu" in s["news_sources"]]
 
     fn = fetch_finnhub(finnhub_syms, db) if finnhub_syms else 0
     av = fetch_alphavantage(av_syms, db) if av_syms else 0
+    ft = sum(fetch_futu(s, db) for s in futu_syms) if futu_syms else 0
     rs = fetch_rss(db) if config.rss_macro_enabled(db) else 0
-    log.info("news collected: symbols=%d finnhub=%d rss=%d alphavantage=%d",
-             len(syms), fn, rs, av)
-    return {"finnhub": fn, "rss": rs, "alphavantage": av, "symbols": len(syms)}
+    log.info("news collected: symbols=%d finnhub=%d rss=%d alphavantage=%d futu=%d",
+             len(syms), fn, rs, av, ft)
+    return {"finnhub": fn, "rss": rs, "alphavantage": av, "futu": ft,
+            "symbols": len(syms)}

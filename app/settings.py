@@ -40,8 +40,23 @@ alphavantage_enabled = bool(ALPHAVANTAGE_API_KEY)
 SILICONFLOW_API_KEY = _get("SILICONFLOW_API_KEY")
 SILICONFLOW_BASE_URL = _get("SILICONFLOW_BASE_URL", "https://api.siliconflow.cn/v1")
 SILICONFLOW_MODEL = _get("SILICONFLOW_MODEL", "Pro/deepseek-ai/DeepSeek-V3.2")
+# 工具代理(function-calling)用的 Qwen 模型；自主调用 Futu skills 组装情报后交 DeepSeek 分析
+SILICONFLOW_TOOL_MODEL = _get("SILICONFLOW_TOOL_MODEL", "Qwen/Qwen2.5-72B-Instruct")
 # 新闻精华 LLM 提示词外部覆盖文件(可选);为空则用 analysis/news_brief.py 内置提示词
 NEWS_PROMPT_PATH = _get("NEWS_PROMPT_PATH")
+
+# ─── 短线建议(AdvicePanel)缓存/保留 ───
+ADVICE_CACHE_TTL = int(_get("ADVICE_CACHE_TTL", "1800") or 1800)   # 实时建议复用有效期(秒)
+ADVICE_KEEP = int(_get("ADVICE_KEEP", "5") or 5)                   # 每标的保留最新结果条数
+
+# ─── 富途 OpenAPI (app/skills/futuapi，需本地/远端 OpenD 网关) ───
+FUTU_ENABLED = _get("FUTU_ENABLED", "false").lower() == "true"
+FUTU_OPEND_HOST = _get("FUTU_OPEND_HOST", "127.0.0.1")
+FUTU_OPEND_PORT = int(_get("FUTU_OPEND_PORT", "11111") or 11111)
+FUTU_LOGIN_ACCOUNT = _get("FUTU_LOGIN_ACCOUNT")
+FUTU_LOGIN_PWD = os.environ.get("FUTU_LOGIN_PWD", "")
+FUTU_SKILLS_DIR = _get("FUTU_SKILLS_DIR", "/app/skills/futuapi")
+FUTU_AGENT_MAX_ROUNDS = int(_get("FUTU_AGENT_MAX_ROUNDS", "4") or 4)
 
 # ─── Telegram ───
 TELEGRAM_BOT_TOKEN = _get("TELEGRAM_BOT_TOKEN")

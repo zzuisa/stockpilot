@@ -18,6 +18,9 @@ _TIER2 = (
     "business insider", "thestreet", "investing.com", "morningstar", "zacks",
     "motley fool", "fool.com", "investor", "kiplinger", "investopedia",
     "techcrunch", "the verge", "ars technica",
+    # 中文财经(富途/港A股资讯常见来源)
+    "财联社", "东方财富", "新浪财经", "华尔街见闻", "第一财经", "证券时报",
+    "中国证券报", "格隆汇", "智通财经", "同花顺", "财新", "路透中文", "富途",
 )
 # 三线：PR 通稷/未知/博客（默认）
 _PR = (

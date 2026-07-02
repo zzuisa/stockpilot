@@ -383,14 +383,26 @@ async def get_latest_analysis(symbol: str, db=Depends(get_db)):
 
 
 # ─── 前瞻短线建议（SSE 流式，融合盘前日报多维信息）─────────────────────────────
+@router.get("/advice/latest")
+async def advice_latest(symbol: str = Query(...)):
+    """打开面板即取最近建议 + 历史(最多5条)，供展示与判断是否需重算。"""
+    from analysis import advice
+    return {
+        "latest": advice.latest_advice(symbol),
+        "history": advice.advice_history(symbol, 5),
+    }
+
+
 @router.get("/advice/stream")
 async def advice_stream(
     request: Request,
     symbol: str = Query(...),
     start: str | None = Query(None, description="ISO8601 起始，可空=最近窗口"),
     end: str | None = Query(None, description="ISO8601 结束，可空=至今"),
+    force: bool = Query(False, description="true=忽略缓存重新分析"),
 ):
     """右侧常备面板 / 归因面板复用：流式产出当前走向 + 短线建议（多维理论支撑）。
+    非 force 时命中近期缓存直接返回(0 token)；否则经串行池排队生成。
     套用 api/attribution.py 的 queue + StreamingResponse 写法。"""
     from analysis import advice
 
@@ -400,6 +412,12 @@ async def advice_stream(
         await q.put(ev)
 
     async def generate():
+        # 缓存优先：命中则直接下发结果，不跑 LLM
+        if not force:
+            cached = await asyncio.to_thread(advice.cache_hit, symbol, start, end)
+            if cached:
+                yield f'data: {json.dumps({"type": "result", "data": cached, "cached": True}, ensure_ascii=False)}\n\n'
+                return
         task = asyncio.create_task(advice.stream_advice(symbol, emit, start, end))
         yield f'data: {json.dumps({"type": "phase", "agent": "start", "status": "running", "detail": "生成短线建议…"}, ensure_ascii=False)}\n\n'
         try:

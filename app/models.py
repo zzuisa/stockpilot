@@ -369,6 +369,21 @@ class PriceAttribution(Base):
                                        name="uq_attr_window"),)
 
 
+class AdviceResult(Base):
+    """短线投资建议结果(右侧常备面板)。持久化 + 缓存，每标的仅保留最新 5 条。"""
+    __tablename__ = "advice_results"
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    symbol = Column(Text, nullable=False, index=True)
+    ts = Column(TIMESTAMP(timezone=True), default=utcnow, index=True)
+    window_start = Column(TIMESTAMP(timezone=True))
+    window_end = Column(TIMESTAMP(timezone=True))
+    is_realtime = Column(Boolean, default=False)
+    stance = Column(Text)                             # 偏多 | 偏空 | 中性
+    result = Column(JSONB)                            # 完整结构化建议(含 meta)
+    reasoning = Column(Text)                          # 流式推理过程
+    tokens = Column(Integer, default=0)
+
+
 class TradeLog(Base):
     """统一交易历史：应用经手的所有下单(手动 UI + 量化循环)"""
     __tablename__ = "trade_log"
