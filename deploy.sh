@@ -51,7 +51,9 @@ build_image() {
   timer_start
   local build_args=""
   [[ "$fresh" == "--fresh" ]] && build_args="--no-cache" && info "跳过缓存 (--fresh)"
-  docker build $build_args -t "${IMAGE}" "$SCRIPT_DIR/app"
+  # --network=host：让构建期(pip/npm)走宿主机解析器，规避 Docker 桥接网默认 DNS
+  # 在本机 IPv6 优先/不可达环境下的外网解析失败。
+  docker build --network=host $build_args -t "${IMAGE}" "$SCRIPT_DIR/app"
   timer_end
   ok "镜像构建完成"
 }

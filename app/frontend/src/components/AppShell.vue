@@ -5,6 +5,8 @@ import { NBadge } from 'naive-ui'
 import { NAV_ITEMS } from '@/router'
 import { useClock } from '@/composables/useClock'
 import { useSystemStore } from '@/stores/system'
+import AccountSwitcher from '@/components/AccountSwitcher.vue'
+import NotificationBell from '@/components/NotificationBell.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -33,6 +35,8 @@ function go(name: string) {
         Scheduler
       </span>
       <span class="grow" />
+      <notification-bell />
+      <account-switcher />
       <span class="clock mono">{{ clock }}</span>
     </header>
 

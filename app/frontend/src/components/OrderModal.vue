@@ -26,6 +26,7 @@ const side = ref<OrderSide>('buy')
 const kind = ref<OrderKind>('market')
 const qty = ref<number | null>(null)
 const value = ref<number | null>(null)
+const currency = ref<'USD' | 'EUR'>('USD')   // 金额币种,默认美元(标的币种)
 const limitPrice = ref<number | null>(null)
 const stopPrice = ref<number | null>(null)
 const validity = ref<TimeValidity>('DAY')
@@ -62,8 +63,9 @@ watch(
   },
 )
 
-// 按"实时现价"换算出的预估股数（仅展示用）
+// 按"实时现价"换算出的预估股数（仅 USD 金额精确展示；EUR 由后端换算）
 const estShares = computed(() => {
+  if (currency.value !== 'USD') return null
   if (!value.value || !livePrice.value || livePrice.value <= 0) return null
   return Math.round((value.value / livePrice.value) * 1e4) / 1e4
 })
@@ -77,6 +79,7 @@ watch(
       kind.value = 'market'
       qty.value = null
       value.value = null
+      currency.value = 'USD'
       limitPrice.value = null
       stopPrice.value = null
       validity.value = 'DAY'
@@ -112,29 +115,25 @@ async function submit() {
         timeValidity: validity.value,
       })
     } else {
-      // 市价单：一律以股数提交。买入填金额时，先后端实时取现价换算成股数。
-      let quantity = qty.value
-      if (side.value === 'buy' && !quantity && value.value) {
-        const price = await refreshQuote()
-        if (price <= 0) {
-          notify.err('无法获取实时现价，无法按金额买入')
+      // 市价单：按金额买入时交给后端按所选币种换算 + 余额预校验(只发 quantity)。
+      if (side.value === 'buy' && !qty.value && value.value) {
+        await t212Api.marketOrder({
+          ticker: ticker.value,
+          side: 'buy',
+          value: value.value,
+          currency: currency.value,
+        })
+      } else {
+        if (!qty.value || qty.value <= 0) {
+          notify.err('请填写有效股数或金额')
           return
         }
-        quantity = Math.round((value.value / price) * 1e4) / 1e4
-        if (quantity <= 0) {
-          notify.err('金额过小，换算股数为 0')
-          return
-        }
+        await t212Api.marketOrder({
+          ticker: ticker.value,
+          side: side.value,
+          quantity: qty.value,
+        })
       }
-      if (!quantity || quantity <= 0) {
-        notify.err('请填写有效股数或金额')
-        return
-      }
-      await t212Api.marketOrder({
-        ticker: ticker.value,
-        side: side.value,
-        quantity,
-      })
     }
     const kindLabel = kind.value === 'limit' ? '限价' : kind.value === 'stop' ? '止损' : '市价'
     notify.ok(`${side.value === 'buy' ? '买入' : '卖出'}${kindLabel}订单已提交`)
@@ -191,26 +190,37 @@ async function submit() {
     </div>
 
     <!-- 市价买入 -->
-    <div v-if="kind === 'market' && side === 'buy'" class="two-col">
-      <div class="field">
-        <label>金额 (€)</label>
-        <n-input-number v-model:value="value" :min="1" placeholder="150" @update:value="qty = null" />
+    <div v-if="kind === 'market' && side === 'buy'">
+      <div class="field" style="margin-bottom: 8px">
+        <label>金额币种（默认美元；选欧元由后端按 T212 汇率折算）</label>
+        <n-radio-group v-model:value="currency" size="small">
+          <n-radio-button value="USD">美元 USD</n-radio-button>
+          <n-radio-button value="EUR">欧元 EUR</n-radio-button>
+        </n-radio-group>
       </div>
-      <div class="field">
-        <label>股数</label>
-        <n-input-number v-model:value="qty" :min="0.0001" placeholder="1" @update:value="value = null" />
+      <div class="two-col">
+        <div class="field">
+          <label>金额 ({{ currency === 'USD' ? '$' : '€' }})</label>
+          <n-input-number v-model:value="value" :min="1" placeholder="150" @update:value="qty = null" />
+        </div>
+        <div class="field">
+          <label>股数</label>
+          <n-input-number v-model:value="qty" :min="0.0001" placeholder="1" @update:value="value = null" />
+        </div>
       </div>
     </div>
     <!-- 金额→股数 实时预估（现价由后端实时拉取） -->
-    <div v-if="kind === 'market' && side === 'buy' && value" class="conv-hint">
-      <span v-if="quoting" class="faint">实时取价中…</span>
-      <template v-else-if="livePrice">
-        实时现价 <span class="mono">{{ livePrice.toFixed(4) }}</span>
-        · 预估 ≈ <span class="mono amber">{{ estShares }}</span> 股
-        <span class="faint">（下单瞬间按最新价重算）</span>
+    <div v-if="kind === 'market' && side === 'buy' && value && !qty" class="conv-hint">
+      <template v-if="currency === 'USD'">
+        <span v-if="quoting" class="faint">实时取价中…</span>
+        <template v-else-if="livePrice">
+          实时现价 <span class="mono">{{ livePrice.toFixed(4) }} USD</span>
+          · 预估 ≈ <span class="mono amber">{{ estShares }}</span> 股
+        </template>
+        <span v-else class="faint">现价待获取，提交时由后端换算</span>
+        <n-button text size="tiny" :loading="quoting" style="margin-left: 6px" @click="refreshQuote">⟳</n-button>
       </template>
-      <span v-else class="faint">现价待获取，提交时将实时换算</span>
-      <n-button text size="tiny" :loading="quoting" style="margin-left: 6px" @click="refreshQuote">⟳</n-button>
+      <span v-else class="faint">欧元金额将由后端按 T212 反推汇率换算成股数（提交前会校验余额）</span>
     </div>
     <!-- 市价卖出 -->
     <div v-if="kind === 'market' && side === 'sell'" class="field">

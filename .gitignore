@@ -36,6 +36,9 @@ stockpilot-app.tar
 *.sql.gz
 backups/
 
+# ───── K8s 本地缓存（kubeconfig/discovery 缓存，勿提交） ─────
+.kube/
+
 # ───── 操作系统 / 编辑器 ─────
 .DS_Store
 Thumbs.db

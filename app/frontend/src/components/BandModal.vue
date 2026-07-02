@@ -4,7 +4,10 @@ import {
   NButton,
   NInputNumber,
   NModal,
+  NRadioButton,
+  NRadioGroup,
   NSelect,
+  NSwitch,
   NTag,
   NTooltip,
 } from 'naive-ui'
@@ -19,6 +22,7 @@ const props = defineProps<{
   instrument: T212Instrument | null
   position: T212Position | null
   env: string
+  presetMode?: 'ind' | 'market' | 'turning' | null
 }>()
 const emit = defineEmits<{
   'update:show': [boolean]
@@ -37,16 +41,46 @@ const stratStarting = ref(false)
 const stratStopping = ref(false)
 let pollTimer: ReturnType<typeof setInterval> | null = null
 
-// 策略参数
-const buyMode = ref<'ind' | 'market'>('market')
-const profitPct = ref(2.0)
-const stopLoss = ref(1.0)
-const budgetEur = ref(0)
+// 策略参数（默认拐点低买高卖 · 适中节奏）
+const buyMode = ref<'ind' | 'market' | 'turning'>('turning')
+const currency = ref<'USD' | 'EUR'>('USD')
+const profitPct = ref(0.5)
+const stopLoss = ref(2)
+const budgetEur = ref(1000)
 const budgetRatio = ref(50)
 const sellRatio = ref(100)
-const intervalSec = ref(15)
-const maxTradesDay = ref(10)
+const intervalSec = ref(5)
+const maxTradesDay = ref(50)
 const rsiBuy = ref(45)
+// 拐点(turning)算法参数 — 日内高频
+const turnBeta = ref(4)              // swing 半径(分钟)
+const turnRebound = ref(0.2)         // 反弹确认 %
+const turnWindowMin = ref(180)       // 采样窗口(分钟，60s/根)
+const turnSampleSec = ref(60)        // 采样间隔(秒)
+const turnRecent = ref(3)            // 拐点确认后 N 根内仍可买
+const buyDiscountPct = ref(0)
+const sellAtPeak = ref(true)
+// daily 模式遗留参数（高级里可切大波段日线）
+const turnRecentDays = ref(8)
+const explainLlm = ref(true)         // 每次触发用 LLM 生成决策解释
+const showAdvanced = ref(false)
+
+// 节奏预设：一键设置 β/反弹/止盈/止损
+type Cadence = 'fast' | 'mid' | 'big'
+const cadence = ref<Cadence>('mid')
+function applyCadence(kind: Cadence) {
+  cadence.value = kind
+  if (kind === 'fast') {
+    turnBeta.value = 3; turnRebound.value = 0.1; profitPct.value = 0.3; stopLoss.value = 1.5
+    turnWindowMin.value = 120
+  } else if (kind === 'mid') {
+    turnBeta.value = 4; turnRebound.value = 0.2; profitPct.value = 0.5; stopLoss.value = 2
+    turnWindowMin.value = 180
+  } else {
+    turnBeta.value = 8; turnRebound.value = 0.4; profitPct.value = 1.0; stopLoss.value = 3
+    turnWindowMin.value = 240
+  }
+}
 
 // ── 单次挂单 状态 ──────────────────────────────────────────────────────────────
 const buyPrice = ref<number | null>(null)
@@ -89,6 +123,7 @@ watch(
   (open) => {
     if (open) {
       mode.value = 'loop'
+      if (props.presetMode) buyMode.value = props.presetMode
       // 单次挂单重置
       const q = props.instrument?.quantity ?? props.position?.quantity ?? null
       buyPrice.value = null
@@ -124,8 +159,20 @@ async function startStrategy() {
       interval: intervalSec.value,
       max_trades_day: maxTradesDay.value,
       rsi_buy: rsiBuy.value,
+      currency: currency.value,
+      // 日内拐点算法参数
+      turn_tf: 'intraday',
+      turn_beta: turnBeta.value,
+      turn_rebound_pct: turnRebound.value,
+      turn_window: turnWindowMin.value,
+      turn_sample_sec: turnSampleSec.value,
+      turn_recent: turnRecent.value,
+      turn_recent_days: turnRecentDays.value,
+      buy_discount_pct: buyDiscountPct.value,
+      sell_at_peak: sellAtPeak.value,
+      explain_llm: explainLlm.value,
     })
-    notify.ok(`${sym.value} 循环波段已启动`)
+    notify.ok(`${sym.value} ${buyMode.value === 'turning' ? '拐点量化' : '循环波段'}已启动`)
     await fetchStatus()
   } catch (e) {
     notify.err(`启动失败: ${apiError(e)}`)
@@ -283,6 +330,31 @@ function fmtTs(iso: string | null): string {
             </div>
           </div>
 
+          <!-- 本次开启以来收益（方便灵活调整） -->
+          <div class="pnl-since">
+            <div class="pnl-title">本次开启收益 <span class="faint small">since {{ fmtTs(stratStatus.started_at ?? null) }}</span></div>
+            <div class="pnl-row">
+              <span class="pnl-cell">
+                已实现
+                <b :style="{ color: (stratStatus.realized_pnl ?? 0) >= 0 ? 'var(--up)' : 'var(--down)' }">
+                  {{ (stratStatus.realized_pnl ?? 0) >= 0 ? '+' : '' }}{{ (stratStatus.realized_pnl ?? 0).toFixed(2) }}
+                </b>
+              </span>
+              <span class="pnl-cell" v-if="stratStatus.roi_pct != null">
+                ROI <b :style="{ color: stratStatus.roi_pct >= 0 ? 'var(--up)' : 'var(--down)' }">
+                  {{ (stratStatus.roi_pct >= 0 ? '+' : '') + stratStatus.roi_pct.toFixed(2) }}%
+                </b>
+              </span>
+              <span class="pnl-cell">
+                胜率 <b>{{ stratStatus.win_rate != null ? stratStatus.win_rate + '%' : '—' }}</b>
+                <span class="faint small">({{ stratStatus.wins ?? 0 }}/{{ (stratStatus.wins ?? 0) + (stratStatus.losses ?? 0) }})</span>
+              </span>
+            </div>
+          </div>
+
+          <div v-if="stratStatus.last_explain" class="decision-explain">
+            <span class="de-ico">💡</span><span>{{ stratStatus.last_explain }}</span>
+          </div>
           <div v-if="stratStatus.last_action" class="last-action">
             最近操作: <span class="mono">{{ stratStatus.last_action }}</span>
           </div>
@@ -297,7 +369,10 @@ function fmtTs(iso: string | null): string {
 
           <div class="params-summary">
             止盈 {{ stratStatus.params.profit_pct }}% · 止损 {{ stratStatus.params.stop_loss }}%
-            · 买入: {{ stratStatus.params.buy_mode === 'market' ? '空仓即市价买' : 'RSI信号' }}
+            · 买入: {{ stratStatus.params.buy_mode === 'market' ? '空仓即市价买' : stratStatus.params.buy_mode === 'turning' ? '拐点低买' : 'RSI信号' }}
+            <span v-if="stratStatus.params.buy_mode === 'turning' && stratStatus.turn_signal">
+              · 拐点信号 <b :style="{ color: stratStatus.turn_signal === 'buy' ? 'var(--up)' : stratStatus.turn_signal === 'sell' ? 'var(--down)' : 'var(--muted)' }">{{ stratStatus.turn_signal }}</b>
+            </span>
           </div>
 
           <n-button
@@ -333,41 +408,59 @@ function fmtTs(iso: string | null): string {
       <div class="loop-form">
         <div class="form-section-title">{{ stratStatus ? '重新配置并启动' : '策略配置' }}</div>
 
-        <div class="field">
-          <label>
-            买入触发方式
+        <!-- 拐点低买高卖 · 日内算法驱动 -->
+        <div class="turn-box">
+          <div class="turn-title">拐点低买高卖 · 日内算法
             <n-tooltip trigger="hover" placement="right">
               <template #trigger><span class="help">?</span></template>
               <div>
-                <b>空仓即市价买入</b>：卖出后立即按市价重新建仓，适合趋势震荡行情<br>
-                <b>RSI 超卖信号</b>：等待 RSI 低于阈值 + MACD 动能转正才买入，需 5 分钟预热
+                在 1 分钟采样的价格序列上识别<b>局部谷/峰</b>：现价自谷反弹 ≥ 反弹确认% → 低买入场；
+                自峰回落 → 高卖。窗口短、每轮重算，<b>日内可多次触发</b>。<br>
+                节奏越「高频」：β 越小、反弹确认越小、止盈越小 → 触发越频繁。
               </div>
             </n-tooltip>
-          </label>
-          <n-select
-            v-model:value="buyMode"
-            :options="[
-              { label: '空仓即市价买入（推荐）', value: 'market' },
-              { label: 'RSI 超卖信号买入', value: 'ind' },
-            ]"
-          />
+          </div>
+          <!-- 节奏预设 -->
+          <div class="cadence-row">
+            <button class="cad-btn" :class="{ active: cadence === 'fast' }" @click="applyCadence('fast')">
+              高频<span class="faint small">~8-10/日</span>
+            </button>
+            <button class="cad-btn" :class="{ active: cadence === 'mid' }" @click="applyCadence('mid')">
+              适中<span class="faint small">~5/日</span>
+            </button>
+            <button class="cad-btn" :class="{ active: cadence === 'big' }" @click="applyCadence('big')">
+              大波段<span class="faint small">~2-3/日</span>
+            </button>
+          </div>
+          <div class="two-col">
+            <div class="field">
+              <label>波段灵敏度 β（分钟）<span class="faint small">越大波段越大</span></label>
+              <n-input-number v-model:value="turnBeta" :min="2" :max="30" :step="1">
+                <template #suffix>分</template>
+              </n-input-number>
+            </div>
+            <div class="field">
+              <label>反弹确认（自谷反弹 %）<span class="faint small">越小越灵敏</span></label>
+              <n-input-number v-model:value="turnRebound" :min="0.05" :max="3" :step="0.05">
+                <template #suffix>%</template>
+              </n-input-number>
+            </div>
+          </div>
+          <div class="turn-hint">
+            买：现价自近期『谷』反弹 ≥ {{ turnRebound }}% 时挂 buy-limit 低买。
+            卖：sell-limit 高卖，目标 = max(止盈 {{ profitPct }}%, 算法峰价)；止损为下方硬保护。
+          </div>
         </div>
 
-        <div v-if="buyMode === 'ind'" class="field">
-          <label>RSI 买入阈值（低于此值触发买入）</label>
-          <n-input-number v-model:value="rsiBuy" :min="10" :max="70" :step="1">
-            <template #suffix>RSI</template>
-          </n-input-number>
-        </div>
-
+        <!-- 主参数：止盈 / 止损 -->
         <div class="two-col">
           <div class="field">
             <label>止盈目标（高于均价 %）</label>
-            <n-input-number v-model:value="profitPct" :min="0.1" :max="50" :step="0.5">
+            <n-input-number v-model:value="profitPct" :min="0.1" :max="50" :step="0.1">
               <template #suffix>%</template>
             </n-input-number>
             <div class="quick-btns">
-              <button v-for="v in [1, 2, 3, 5]" :key="v" class="qbtn" @click="profitPct = v">{{ v }}%</button>
+              <button v-for="v in [0.3, 0.5, 1, 2]" :key="v" class="qbtn" @click="profitPct = v">{{ v }}%</button>
             </div>
           </div>
           <div class="field">
@@ -376,59 +469,86 @@ function fmtTs(iso: string | null): string {
               <template #suffix>%</template>
             </n-input-number>
             <div class="quick-btns">
-              <button v-for="v in [0.5, 1, 2, 3]" :key="v" class="qbtn" @click="stopLoss = v">{{ v }}%</button>
+              <button v-for="v in [1, 2, 3, 5]" :key="v" class="qbtn" @click="stopLoss = v">{{ v }}%</button>
             </div>
           </div>
         </div>
 
-        <div class="two-col">
-          <div class="field">
-            <label>
-              每次买入金额 €
-              <span class="faint small">（0 = 按比例）</span>
-            </label>
-            <n-input-number v-model:value="budgetEur" :min="0" :step="10" placeholder="0 = 按比例" />
-          </div>
-          <div class="field">
-            <label>买入占可用现金比例</label>
-            <n-input-number v-model:value="budgetRatio" :min="1" :max="100" :step="5">
-              <template #suffix>%</template>
-            </n-input-number>
-          </div>
+        <!-- 每次买入金额 -->
+        <div class="field">
+          <label>每次买入金额 {{ currency === 'USD' ? '$' : '€' }}
+            <span class="faint small">（0 = 按可用现金比例）</span>
+          </label>
+          <n-input-number v-model:value="budgetEur" :min="0" :step="10" placeholder="0 = 按比例" />
         </div>
 
-        <div class="two-col">
+        <!-- 高级参数（折叠） -->
+        <div class="adv-toggle" @click="showAdvanced = !showAdvanced">
+          <span>{{ showAdvanced ? '▾' : '▸' }} 高级参数</span>
+          <span class="faint small">币种 / 仓位比例 / 采样窗口 / 间隔 / 每日上限</span>
+        </div>
+        <div v-show="showAdvanced" class="adv-box">
           <div class="field">
-            <label>卖出占持仓比例</label>
-            <n-input-number v-model:value="sellRatio" :min="1" :max="100" :step="10">
-              <template #suffix>%</template>
-            </n-input-number>
+            <label>金额币种 <span class="faint small">默认美元=标的币种，精确无需汇率</span></label>
+            <n-radio-group v-model:value="currency" size="small">
+              <n-radio-button value="USD">美元 USD</n-radio-button>
+              <n-radio-button value="EUR">欧元 EUR</n-radio-button>
+            </n-radio-group>
+          </div>
+          <div class="two-col">
+            <div class="field">
+              <label>买入占可用现金比例</label>
+              <n-input-number v-model:value="budgetRatio" :min="1" :max="100" :step="5"><template #suffix>%</template></n-input-number>
+            </div>
+            <div class="field">
+              <label>卖出占持仓比例</label>
+              <n-input-number v-model:value="sellRatio" :min="1" :max="100" :step="10"><template #suffix>%</template></n-input-number>
+            </div>
+          </div>
+          <div class="two-col">
+            <div class="field">
+              <label>采样窗口（分钟）<span class="faint small">回看多长找拐点</span></label>
+              <n-input-number v-model:value="turnWindowMin" :min="30" :max="390" :step="30"><template #suffix>分</template></n-input-number>
+            </div>
+            <div class="field">
+              <label>谷新鲜度（根）<span class="faint small">确认后 N 根内仍买</span></label>
+              <n-input-number v-model:value="turnRecent" :min="1" :max="10" :step="1" />
+            </div>
+          </div>
+          <div class="two-col">
+            <div class="field">
+              <label>低买折扣（buy-limit 低于现价）</label>
+              <n-input-number v-model:value="buyDiscountPct" :min="0" :max="5" :step="0.1"><template #suffix>%</template></n-input-number>
+            </div>
+            <div class="field">
+              <label>高卖取算法峰价 <span class="faint small">峰价高于止盈时按峰价挂</span></label>
+              <n-switch v-model:value="sellAtPeak" />
+            </div>
           </div>
           <div class="field">
-            <label>检查间隔</label>
-            <n-select
-              v-model:value="intervalSec"
-              :options="[
-                { label: '5 秒', value: 5 },
+            <label>LLM 决策解释 <span class="faint small">每次触发用 AI 说明为何买卖(失败回退规则解释)</span></label>
+            <n-switch v-model:value="explainLlm" />
+          </div>
+          <div class="two-col">
+            <div class="field">
+              <label>检查间隔</label>
+              <n-select v-model:value="intervalSec" :options="[
+                { label: '3 秒', value: 3 },
+                { label: '5 秒（推荐）', value: 5 },
                 { label: '15 秒', value: 15 },
                 { label: '30 秒', value: 30 },
-                { label: '1 分钟', value: 60 },
-                { label: '5 分钟', value: 300 },
-              ]"
-            />
+              ]" />
+            </div>
+            <div class="field">
+              <label>每日最大成交笔数（熔断）</label>
+              <n-input-number v-model:value="maxTradesDay" :min="2" :max="100" :step="2" />
+            </div>
           </div>
-        </div>
-
-        <div class="field">
-          <label>每日最大成交笔数（熔断）</label>
-          <n-input-number v-model:value="maxTradesDay" :min="1" :max="50" :step="1" />
         </div>
 
         <div class="hint">
-          策略将<b>往复循环</b>直到手动停止：
-          持仓时每 {{ intervalSec }}s 检查止盈/止损；
-          空仓时{{ buyMode === 'market' ? '立即市价买入' : '等待 RSI 信号买入' }}。
-          每日超过 {{ maxTradesDay }} 笔后自动暂停当日交易。
+          策略<b>往复循环</b>直到手动停止：空仓时按<b>日内拐点</b>择机低买；持仓后挂止盈 {{ profitPct }}% 高卖、
+          跌破 {{ stopLoss }}% 硬止损。每日超过 {{ maxTradesDay }} 笔后暂停当日开新仓。
         </div>
 
         <n-button
@@ -515,6 +635,90 @@ function fmtTs(iso: string | null): string {
 </template>
 
 <style scoped>
+.turn-box {
+  border: 1px solid var(--amber-dim);
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  background: rgba(232, 163, 61, 0.05);
+}
+.turn-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--amber);
+  margin-bottom: 8px;
+}
+.turn-hint {
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.5;
+  margin-top: 4px;
+}
+
+/* ── 节奏预设 ── */
+.cadence-row {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.cad-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 6px 0;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.cad-btn:hover { border-color: var(--amber); }
+.cad-btn.active {
+  border-color: var(--amber);
+  background: rgba(232, 163, 61, 0.12);
+  color: var(--amber);
+}
+
+/* ── 高级折叠 ── */
+.adv-toggle {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 2px;
+  font-size: 12px;
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+  border-top: 1px solid var(--line);
+  margin-top: 4px;
+}
+.adv-toggle:hover { color: var(--amber); }
+.adv-box {
+  padding: 8px 10px;
+  background: var(--panel2);
+  border-radius: 6px;
+  margin-bottom: 12px;
+}
+
+/* ── 本次开启收益 ── */
+.pnl-since {
+  border: 1px solid rgba(232, 163, 61, 0.25);
+  background: rgba(232, 163, 61, 0.05);
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin-bottom: 8px;
+}
+.pnl-title { font-size: 11px; color: var(--amber); margin-bottom: 5px; }
+.pnl-row { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; }
+.pnl-cell { color: var(--muted); font-family: var(--mono); }
+.pnl-cell b { font-family: var(--mono); }
+.small {
+  font-size: 11px;
+}
 .mode-tabs {
   display: flex;
   gap: 0;
@@ -572,6 +776,20 @@ function fmtTs(iso: string | null): string {
 .stat-item {}
 .stat-label { font-size: 10px; color: var(--faint); margin-bottom: 2px; }
 
+.decision-explain {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text);
+  background: rgba(91, 168, 245, 0.08);
+  border: 1px solid rgba(91, 168, 245, 0.25);
+  border-radius: 6px;
+  padding: 7px 9px;
+  margin-bottom: 8px;
+}
+.de-ico { flex: none; }
 .last-action {
   font-size: 11px;
   color: var(--muted);

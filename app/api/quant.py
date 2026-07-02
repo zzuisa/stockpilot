@@ -16,16 +16,29 @@ router = APIRouter(prefix="/api/v1/quant", tags=["quant"])
 
 class StrategyStart(BaseModel):
     t212_ticker: str
-    buy_mode: str = "ind"         # "ind"=RSI+MACD; "market"=空仓即买
+    buy_mode: str = "turning"     # "turning"=日内拐点低买(默认); "ind"=RSI+MACD; "market"=空仓即买
     rsi_buy: float = 45
     rsi_sell: float = 55
-    stop_loss: float = 1.0        # 硬止损 %
-    profit_pct: float = 2.0       # 盈利目标 %(高于均价此比例时卖出)
+    stop_loss: float = 2.0        # 硬止损 %
+    profit_pct: float = 0.5       # 盈利目标 %(高于均价此比例时卖出)
     budget_ratio: float = 50.0    # 每次买入占可用现金比例 %
     sell_ratio: float = 100.0     # 每次卖出占持仓比例 %
-    budget_eur: float = 0.0       # 单笔买入上限 €(0=不限)
+    budget_eur: float = 1000.0    # 单笔买入上限(按 currency 计;0=不限)
+    currency: str = "USD"         # 下单金额币种(默认美元)
     interval: int = 5
-    max_trades_day: int = 10
+    max_trades_day: int = 50
+    slippage_pct: float = 0.5     # 24/5 可成交限价滑点 %(买高卖低跨价立即成交)
+    # 拐点低买高卖(buy_mode=turning)算法参数
+    turn_tf: str = "intraday"     # intraday=日内采样高频拐点(默认); daily=日线级 PIP
+    turn_window: int = 180        # 日内：采样根数(配合 60s 采样 ≈ 3 小时)
+    turn_sample_sec: int = 60     # 日内：拐点序列采样间隔(秒)
+    turn_beta: float = 4          # 日内：swing 半径(采样根≈分钟)；daily=PIP 最小间隔(天)
+    turn_rebound_pct: float = 0.2  # 日内：自谷反弹/自峰回落 ≥ 此 % 才确认拐点
+    turn_recent: int = 3          # 日内：拐点确认后多少根采样内仍可买入
+    turn_recent_days: int = 8     # daily：谷确认后 N 个交易日内仍可买入
+    buy_discount_pct: float = 0.0  # 低买折扣 %(buy-limit 低于现价)
+    sell_at_peak: bool = True     # 高卖目标取算法识别的峰价(高于止盈目标时)
+    explain_llm: bool = True      # 每次触发动作用 LLM 生成决策解释(best-effort)
 
 
 @router.get("/strategies")
@@ -68,10 +81,8 @@ async def get_strategy(symbol: str, db=Depends(get_db)):
 
 @router.post("/strategies/{symbol}/start")
 async def start_strategy(symbol: str, body: StrategyStart):
-    if not settings.t212_enabled:
-        raise HTTPException(503, "T212 未配置")
-    if body.buy_mode not in ("ind", "market"):
-        raise HTTPException(422, "buy_mode 须为 ind 或 market")
+    if body.buy_mode not in ("ind", "market", "turning"):
+        raise HTTPException(422, "buy_mode 须为 ind / market / turning")
     if not (0.1 <= body.stop_loss <= 20):
         raise HTTPException(422, "stop_loss 取值 0.1–20 (%)")
     if body.profit_pct <= 0:
@@ -80,9 +91,15 @@ async def start_strategy(symbol: str, body: StrategyStart):
         raise HTTPException(422, "budget_ratio 取值 1–100 (%)")
     if not (1 <= body.sell_ratio <= 100):
         raise HTTPException(422, "sell_ratio 取值 1–100 (%)")
+    from t212.account_cache import get_active as _get_active
+    acct = _get_active()
+    if not acct:
+        raise HTTPException(503, "未配置 T212 账户，请先在「账户」页面添加 API Key")
     params = body.model_dump(exclude={"t212_ticker"})
-    runner = quant.start(symbol, body.t212_ticker, params)
-    log.info("quant start %s by api (env=%s)", symbol, settings.T212_ENV)
+    runner = quant.start(symbol, body.t212_ticker, params,
+                         account_id=acct["id"], api_key=acct["api_key"],
+                         api_secret=acct.get("api_secret"), env=acct["env"])
+    log.info("quant start %s (account=%s env=%s)", symbol, acct["id"], acct["env"])
     return runner.status()
 
 

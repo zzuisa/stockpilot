@@ -26,8 +26,11 @@ import db as database
 import jobs
 import settings
 import quant
-from api import dashboard, stream, t212_market, watchlist, webhook
+from api import accounts as accounts_api
+from api import dashboard, news_llm, research, stream, t212_market, watchlist, webhook
 from api import quant as quant_api
+from api import backtest as backtest_api
+from api import attribution as attribution_api
 from notify import telegram as tg
 
 _STATIC = Path(__file__).parent / "static"
@@ -58,10 +61,13 @@ def _schedule_jobs():
                                         minute=50), id="community")
     add(jobs.job_news, CronTrigger(day_of_week="mon-fri", hour=22,
                                    minute=55), id="news")
-    add(jobs.job_sentiment, CronTrigger(day_of_week="mon-fri", hour=23,
-                                        minute=0), id="sentiment")
+    # 情绪分析不再每日定时跑：由常驻 news_llm_loop 持续增量打分(见 lifespan)；
+    # job_sentiment 仍保留供任务页手动触发。
     add(jobs.job_signals, CronTrigger(day_of_week="mon-fri", hour=23,
                                       minute=10), id="signals")
+    # 自愈补全技术指标:每 30 分钟检查 watchlist + 量化标的，缺失/过期即补算
+    add(jobs.job_ensure_indicators, CronTrigger(minute="*/30"),
+        id="ensure_indicators")
     # 次日早报
     add(jobs.job_daily_report, CronTrigger(day_of_week="mon-fri", hour=8,
                                            minute=0), id="daily_report")
@@ -92,9 +98,27 @@ async def lifespan(app: FastAPI):
         else:
             log.info("数据库已有 %d 个分组,跳过 YAML 覆盖(手动同步: POST /api/v1/sync-yaml)", existing)
 
+    # 若 T212 已配置但账户表为空，自动从 settings 迁移出默认账户
+    if settings.t212_enabled:
+        with database.get_session() as s:
+            from models import T212Account
+            if s.query(T212Account).count() == 0:
+                acct = T212Account(
+                    name=f"{(settings.T212_ENV or 'demo').upper()} 默认账户",
+                    api_key=settings.T212_API_KEY,
+                    env=settings.T212_ENV or "demo",
+                    is_active=True,
+                )
+                s.add(acct)
+                log.info("自动创建默认 T212 账户 (env=%s)", acct.env)
+
     _schedule_jobs()
     scheduler.start()
-    await tg.start_bot()
+    # Telegram 启动需访问外网(get_me)；网络/DNS 故障时不应拖垮整个应用启动。
+    try:
+        await tg.start_bot()
+    except Exception as e:
+        log.warning("Telegram 机器人启动失败(非致命，其余功能照常)：%s", e)
 
     if settings.t212_enabled:
         n = quant.resume_active()
@@ -107,24 +131,44 @@ async def lifespan(app: FastAPI):
             await jobs.job_backfill()
         asyncio.get_event_loop().create_task(_maybe_backfill())
 
+    # 启动后补全一次技术指标(新部署/新标的立即有数据,不必等 30min 调度)
+    async def _kick_indicators():
+        await asyncio.sleep(45)   # 让 backfill 先行
+        await jobs.job_ensure_indicators()
+    asyncio.get_event_loop().create_task(_kick_indicators())
+
+    # 常驻 LLM 情绪分析工作器(持续增量打分，实时进度 + token 统计)
+    from analysis import sentiment as _sentiment
+    news_llm_task = asyncio.get_event_loop().create_task(
+        _sentiment.news_llm_loop(interval=15))
+
     log.info("StockPilot 启动完成 (t212=%s finnhub=%s llm=%s tg=%s email=%s)",
              settings.t212_enabled, settings.finnhub_enabled,
              settings.llm_enabled, settings.telegram_enabled,
              settings.email_enabled)
     yield
+    news_llm_task.cancel()
     quant.shutdown()
-    await tg.stop_bot()
+    try:
+        await tg.stop_bot()
+    except Exception as e:
+        log.warning("Telegram 机器人停止异常(忽略)：%s", e)
     scheduler.shutdown(wait=False)
 
 
 app = FastAPI(title="StockPilot", version="2.0",
               root_path=settings.ROOT_PATH, lifespan=lifespan)
+app.include_router(accounts_api.router)
 app.include_router(watchlist.router)
 app.include_router(dashboard.router)
+app.include_router(news_llm.router)
+app.include_router(research.router)
 app.include_router(stream.router)
 app.include_router(quant_api.router)
 app.include_router(t212_market.router)
 app.include_router(webhook.router)
+app.include_router(backtest_api.router)
+app.include_router(attribution_api.router)
 
 
 @app.get("/health")

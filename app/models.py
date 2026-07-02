@@ -38,7 +38,10 @@ class News(Base):
     __tablename__ = "news"
     id = Column(BigInteger, primary_key=True, autoincrement=True)
     symbol = Column(Text, index=True)                # 空 = 宏观新闻
-    source = Column(Text, nullable=False)            # finnhub | rss
+    source = Column(Text, nullable=False)            # 采集渠道: finnhub | rss | alphavantage
+    source_name = Column(Text)                       # 媒体名: Reuters/Bloomberg/...
+    source_tier = Column(SmallInteger)               # 质量等级 1/2/3 (1 最佳)
+    relevance = Column(Float)                        # 0..1 与标的相关度
     url = Column(Text, unique=True, nullable=False)
     title = Column(Text)
     summary = Column(Text)
@@ -106,12 +109,15 @@ class T212Order(Base):
     __tablename__ = "t212_orders"
     id = Column(BigInteger, primary_key=True)        # T212 订单 id
     ticker = Column(Text)
-    type = Column(Text)
-    status = Column(Text)
-    filled_quantity = Column(Float)
-    filled_value = Column(Float)
-    fill_price = Column(Float)
-    date_created = Column(TIMESTAMP(timezone=True))
+    side = Column(Text)                              # BUY | SELL（真实成交方向）
+    type = Column(Text)                              # MARKET | LIMIT | STOP
+    status = Column(Text)                            # FILLED | CANCELLED | ...
+    filled_quantity = Column(Float)                  # 真实成交股数
+    filled_value = Column(Float)                     # 账户币种实际净额(含 FX/费, walletImpact.netValue)
+    fill_price = Column(Float)                       # 标的币种真实成交单价
+    date_created = Column(TIMESTAMP(timezone=True))  # 下单时间
+    filled_at = Column(TIMESTAMP(timezone=True), index=True)  # 真实成交时间
+    account_id = Column(Integer, index=True)         # 所属 T212 账户
     raw = Column(JSONB)
 
 
@@ -225,7 +231,33 @@ class JobRun(Base):
     started_at = Column(TIMESTAMP(timezone=True), default=utcnow)
     finished_at = Column(TIMESTAMP(timezone=True))
     status = Column(Text, default="running")         # running | ok | failed | skipped
+    progress = Column(Text)                          # 运行中实时进度文本(如 "采集 NVDA 3/11")
     detail = Column(Text)
+
+
+class DataUpdate(Base):
+    """数据更新流：新闻/情绪/信号等每次更新写一条，供应用内通知中心实时展示。"""
+    __tablename__ = "data_updates"
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    ts = Column(TIMESTAMP(timezone=True), default=utcnow, index=True)
+    kind = Column(Text, nullable=False)              # news | sentiment | signal | trade
+    symbol = Column(Text, index=True)                # 空 = 全局/宏观
+    title = Column(Text)                             # 一行摘要
+    detail = Column(JSONB)
+
+
+# ════════════ T212 多账户 ════════════
+
+class T212Account(Base):
+    """多组 T212 API Key，支持账户切换"""
+    __tablename__ = "t212_accounts"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(Text, nullable=False)              # 显示名称，如 "Demo - 个人"
+    api_key = Column(Text, nullable=False)           # API Key
+    api_secret = Column(Text, nullable=True)         # API Secret（部分接口需要，Base64 鉴权用）
+    env = Column(Text, nullable=False, default="demo")   # demo | live
+    is_active = Column(Boolean, default=False)       # 同一时刻只有一个账户激活
+    created_at = Column(TIMESTAMP(timezone=True), default=utcnow)
 
 
 class T212WatchlistItem(Base):
@@ -234,6 +266,8 @@ class T212WatchlistItem(Base):
     ticker = Column(Text, primary_key=True)          # T212 ticker, e.g. NVDA_US_EQ
     name = Column(Text)                              # 显示名称
     added_at = Column(TIMESTAMP(timezone=True), default=utcnow)
+    account_id = Column(Integer, ForeignKey("t212_accounts.id", ondelete="SET NULL"),
+                        nullable=True, index=True)   # NULL = 迁移前历史数据
 
 
 # ════════════ 量化交易(tick 级波段策略) ════════════
@@ -244,9 +278,9 @@ class QuantStrategy(Base):
     symbol = Column(Text, primary_key=True)          # NVDA
     t212_ticker = Column(Text, nullable=False)       # NVDA_US_EQ
     params = Column(JSONB, nullable=False, default=dict)
-    # params: {rsi_buy, rsi_sell, stop_loss, budget_eur, interval,
-    #          max_trades_day}
     active = Column(Boolean, default=False)
+    account_id = Column(Integer, ForeignKey("t212_accounts.id", ondelete="SET NULL"),
+                        nullable=True, index=True)   # 关联账户
     created_at = Column(TIMESTAMP(timezone=True), default=utcnow)
     updated_at = Column(TIMESTAMP(timezone=True), default=utcnow,
                         onupdate=utcnow)
@@ -266,3 +300,92 @@ class QuantTrade(Base):
     pnl = Column(Float)                              # 卖出时的估算盈亏(USD)
     order_id = Column(Text)                          # T212 订单 id
     detail = Column(JSONB)                           # 触发时指标快照
+    account_id = Column(Integer, ForeignKey("t212_accounts.id", ondelete="SET NULL"),
+                        nullable=True, index=True)   # 关联账户
+
+
+class EarningsReport(Base):
+    """季报/年报下载记录"""
+    __tablename__ = "earnings_reports"
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    symbol = Column(Text, nullable=False, index=True)
+    period = Column(Text, nullable=False)              # e.g. "2024Q4"
+    downloaded_at = Column(TIMESTAMP(timezone=True), default=utcnow)
+    filename = Column(Text, nullable=False)
+    path = Column(Text, nullable=False)
+    size = Column(Integer)
+    source = Column(Text, default="yfinance")
+    __table_args__ = (
+        UniqueConstraint("symbol", "period", name="uq_earnings_report"),
+    )
+
+
+class InvestmentAnalysis(Base):
+    """LLM 深度分析结果(泡沫分析 + 投资策略)"""
+    __tablename__ = "investment_analysis"
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    symbol = Column(Text, nullable=False, index=True)
+    ts = Column(TIMESTAMP(timezone=True), default=utcnow, index=True)
+    analysis_type = Column(Text, nullable=False)       # "bubble" | "strategy"
+    bubble_level = Column(Text)                        # normal|slight|moderate|severe|extreme
+    bubble_pct = Column(Float)
+    strategy_text = Column(Text)                       # LLM 结果 JSON string
+    tokens = Column(Integer, default=0)
+    key_metrics = Column(JSONB)
+    report_period = Column(Text)
+
+
+class NewsBrief(Base):
+    """单股新闻精华(LLM 高信号筛选 + 投资判断),只推送此结果而非原始标题。"""
+    __tablename__ = "news_briefs"
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    symbol = Column(Text, nullable=False, index=True)
+    ts = Column(TIMESTAMP(timezone=True), default=utcnow, index=True)
+    window_hours = Column(Integer)                   # 覆盖的新闻时间窗(小时)
+    headline = Column(Text)                          # 一句话核心判断
+    sentiment = Column(Text)                         # bullish | bearish | neutral
+    judgment = Column(Text)                          # 投资判断段落
+    summary_md = Column(Text)                        # 按类别精华 markdown
+    watch_points = Column(Text)                      # 后续需关注的事件/数据
+    item_count = Column(Integer, default=0)          # 纳入的新闻条数
+    news_ids = Column(JSONB)                         # 关联 news.id 列表
+    tokens = Column(Integer, default=0)
+    pushed = Column(Boolean, default=False)
+
+
+class PriceAttribution(Base):
+    """价格变动多 Agent 归因结果(按 标的+时间窗口 缓存复用 + 可回看历史)。"""
+    __tablename__ = "price_attributions"
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    symbol = Column(Text, nullable=False, index=True)
+    start_ts = Column(TIMESTAMP(timezone=True), nullable=False)
+    end_ts = Column(TIMESTAMP(timezone=True), nullable=False)
+    created_at = Column(TIMESTAMP(timezone=True), default=utcnow, index=True)
+    pct_change = Column(Float)                        # 窗口内涨跌%
+    result = Column(JSONB)                            # 最终归因(synth 输出)
+    agents = Column(JSONB)                            # 各 Agent 思考文本(基本面/技术面/情绪/质疑)
+    tokens = Column(Integer, default=0)
+    __table_args__ = (UniqueConstraint("symbol", "start_ts", "end_ts",
+                                       name="uq_attr_window"),)
+
+
+class TradeLog(Base):
+    """统一交易历史：应用经手的所有下单(手动 UI + 量化循环)"""
+    __tablename__ = "trade_log"
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    ts = Column(TIMESTAMP(timezone=True), default=utcnow, index=True)
+    source = Column(Text, nullable=False)            # manual | quant
+    symbol = Column(Text, index=True)                # 简码 NVDA
+    t212_ticker = Column(Text)                       # NVDA_US_EQ
+    side = Column(Text, nullable=False)              # buy | sell
+    order_type = Column(Text)        # market | limit | stop | band_sell | band_buy
+    quantity = Column(Float)
+    price = Column(Float)                            # 限价/止损价 或 估算成交价
+    value_eur = Column(Float)                        # 按金额下单时的金额
+    currency = Column(Text)                          # 按金额下单所选币种 USD|EUR
+    pnl = Column(Float)                              # 卖出估算盈亏(仅量化成交有)
+    reason = Column(Text)                            # 量化原因 / 手动
+    status = Column(Text)                            # submitted | filled | failed
+    order_id = Column(Text)                          # T212 订单 id
+    env = Column(Text)                               # demo | live
+    detail = Column(JSONB)

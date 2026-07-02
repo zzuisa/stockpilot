@@ -67,35 +67,57 @@ def sync_account_snapshot(db):
 
 
 def sync_history(db):
-    """订单 + 分红历史,以 API 主键 upsert 实现增量"""
-    if not settings.t212_enabled:
-        log.info("T212 未配置,跳过历史同步")
-        return {"skipped": True}
-    client = T212()
+    """订单 + 分红历史,以 API 主键 upsert 实现增量（按活跃账户）。
+
+    T212 订单历史为嵌套结构 {order:{...}, fill:{...}}：
+      order: id/side(BUY|SELL)/ticker/type/status/filledQuantity/createdAt
+      fill:  price(真实成交价)/quantity/filledAt/walletImpact.netValue(账户币种净额)
+    """
+    acct_id = None
+    try:
+        from t212.account_cache import get_client, get_active
+        client = get_client()
+        a = get_active()
+        acct_id = a["id"] if a else None
+    except Exception:
+        if not settings.t212_enabled:
+            log.info("T212 未配置,跳过历史同步")
+            return {"skipped": True}
+        client = T212()
 
     orders = (client.order_history(limit=50) or {}).get("items", [])
+    synced = 0
     for o in orders:
-        if o.get("id") is None:
+        order = o.get("order") or {}
+        fill = o.get("fill") or {}
+        oid = order.get("id") or o.get("id")          # 兼容旧扁平 schema
+        if oid is None:
             continue
-        stmt = pg_insert(T212Order).values(
-            id=o["id"],
-            ticker=o.get("ticker"),
-            type=o.get("type"),
-            status=o.get("status"),
-            filled_quantity=o.get("filledQuantity"),
-            filled_value=o.get("filledValue"),
-            fill_price=o.get("fillPrice"),
-            date_created=_parse_ts(o.get("dateCreated")),
+        inst = order.get("instrument") or {}
+        wi = fill.get("walletImpact") or {}
+        vals = dict(
+            id=oid,
+            ticker=order.get("ticker") or inst.get("ticker") or o.get("ticker"),
+            side=order.get("side"),
+            type=order.get("type") or o.get("type"),
+            status=order.get("status") or o.get("status"),
+            filled_quantity=order.get("filledQuantity") or fill.get("quantity")
+            or o.get("filledQuantity"),
+            filled_value=wi.get("netValue") if wi.get("netValue") is not None
+            else o.get("filledValue"),
+            fill_price=fill.get("price") if fill.get("price") is not None
+            else o.get("fillPrice"),
+            date_created=_parse_ts(order.get("createdAt") or o.get("dateCreated")),
+            filled_at=_parse_ts(fill.get("filledAt") or order.get("createdAt")),
+            account_id=acct_id,
             raw=o,
-        ).on_conflict_do_update(
+        )
+        stmt = pg_insert(T212Order).values(**vals).on_conflict_do_update(
             index_elements=["id"],
-            set_={"status": o.get("status"),
-                  "filled_quantity": o.get("filledQuantity"),
-                  "filled_value": o.get("filledValue"),
-                  "fill_price": o.get("fillPrice"),
-                  "raw": o},
+            set_={k: v for k, v in vals.items() if k != "id"},
         )
         db.execute(stmt)
+        synced += 1
 
     dividends = (client.dividends(limit=50) or {}).get("items", [])
     for d in dividends:
@@ -109,4 +131,4 @@ def sync_history(db):
         ).on_conflict_do_nothing(index_elements=["reference"])
         db.execute(stmt)
 
-    return {"orders": len(orders), "dividends": len(dividends)}
+    return {"orders": synced, "dividends": len(dividends)}
