@@ -42,6 +42,10 @@ spec:
           value: sp
         - name: WATCHLIST_PATH
           value: /app/config/watchlist.yaml
+        - name: FUTU_OPEND_HOST         # 集群内 OpenD 网关(Service)；FUTU_ENABLED 由 secret 控制
+          value: futu-opend
+        - name: FUTU_OPEND_PORT
+          value: "11111"
         volumeMounts:
         - name: watchlist-config
           mountPath: /app/config
