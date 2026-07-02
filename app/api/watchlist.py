@@ -133,7 +133,8 @@ class SymbolAdd(BaseModel):
 
 
 @router.post("/groups/{group_id}/symbols", status_code=201)
-async def add_symbol(group_id: str, s: SymbolAdd, db=Depends(get_db)):
+async def add_symbol(group_id: str, s: SymbolAdd,
+                     background_tasks: BackgroundTasks, db=Depends(get_db)):
     grp = db.get(Group, group_id)
     if not grp:
         raise HTTPException(404, "group 不存在")
@@ -152,7 +153,10 @@ async def add_symbol(group_id: str, s: SymbolAdd, db=Depends(get_db)):
                              symbol_config=scfg, active=True))
     db.flush()
     _rebuild_group_routes(db, grp)
-    return {"ok": True, "symbol": sym, "group_id": group_id}
+    # 加入自选后即时补全数据(日线+指标/分钟线/新闻/社区/精华)，后台执行不阻塞响应
+    import jobs
+    background_tasks.add_task(jobs.job_ensure_symbol, sym)
+    return {"ok": True, "symbol": sym, "group_id": group_id, "ensuring": True}
 
 
 class SymbolNewsConfig(BaseModel):
