@@ -18,7 +18,7 @@ _ENV_RE = re.compile(r"\$\{([A-Z0-9_]+)\}")
 # defaults 中可被 group/symbol 覆盖的键
 _INHERITABLE = [
     "notify_channels", "telegram_chat_ids", "email_recipients",
-    "news_sources", "news_auto", "news_types", "rss_macro",
+    "news_sources", "news_auto", "news_types", "news_keyword", "rss_macro",
     "t212_community", "community_priority", "language",
 ]
 _DEFAULT_NOTIFY_ON = ["daily_report", "signal"]
@@ -41,7 +41,8 @@ NEWS_TYPE_LABELS = {
     "supply_chain": "供应链/运营", "governance": "公司治理/公司行动",
 }
 # 标的级新闻采集来源(RSS 为宏观无标的源,由 defaults.rss_macro 全局控制)
-NEWS_SOURCES = ["finnhub", "alphavantage"]
+# futu：富途资讯，非美股(港股/A股/日股/德股关键词)优质源，需 OpenD 可达
+NEWS_SOURCES = ["finnhub", "alphavantage", "futu"]
 _DEFAULT_NEWS_SOURCES = ["finnhub", "alphavantage"]
 
 
@@ -239,6 +240,7 @@ def active_symbols(db) -> list[dict]:
             "groups": [], "t212_community": False,
             "community_priority": scfg.get("community_priority", "all"),
             "news_auto": False, "news_sources": set(), "news_types": set(),
+            "news_keyword": scfg.get("news_keyword"),
         })
         d["groups"].append(w.group_id)
         d["t212_ticker"] = d["t212_ticker"] or w.t212_ticker
@@ -262,6 +264,44 @@ def news_symbols(db) -> list[dict]:
     """仅返回开启了自动新闻拉取(news_auto=True)的标的及其 sources/types。
     供采集层(只拉这些标的)、精华生成、逐条情绪打分共用。"""
     return [d for d in active_symbols(db) if d.get("news_auto")]
+
+
+# ─── 市场识别 + 富途代码/关键词(非美股优先用 Futu 信息源) ───
+# yfinance 后缀 → 市场
+_YF_SUFFIX_MKT = {
+    "DE": "DE", "F": "DE", "SG": "DE", "HK": "HK", "SS": "CN", "SZ": "CN",
+    "T": "JP", "L": "UK", "PA": "FR", "AS": "NL", "SW": "CH", "TO": "CA",
+}
+# 市场 → 富途代码前缀(None=富途无该市场证券代码，仅可关键词搜新闻)
+_FUTU_PREFIX = {"US": "US", "HK": "HK", "CN": None, "JP": "JP", "SG": "SG"}
+
+
+def market_of(sym_cfg: dict) -> str:
+    """标的所属市场：优先 t212_ticker 中段(SYM_<MKT>_EQ)，否则 yf_symbol 后缀，缺省 US。"""
+    t212 = (sym_cfg.get("t212_ticker") or "")
+    parts = t212.split("_")
+    if len(parts) >= 2 and parts[1].isalpha():
+        return parts[1].upper()
+    yf = (sym_cfg.get("yf_symbol") or "")
+    if "." in yf:
+        return _YF_SUFFIX_MKT.get(yf.rsplit(".", 1)[1].upper(), "US")
+    return "US"
+
+
+def futu_code(sym_cfg: dict) -> str | None:
+    """富途证券代码(如 US.AAPL / HK.00700)。无对应市场则 None。"""
+    mkt = market_of(sym_cfg)
+    prefix = _FUTU_PREFIX.get(mkt)
+    if not prefix:
+        return None
+    return f"{prefix}.{sym_cfg['symbol']}"
+
+
+def futu_keyword(sym_cfg: dict) -> str:
+    """富途搜资讯关键词：symbol_config.news_keyword(中文名最佳) 优先，否则 symbol。"""
+    return (sym_cfg.get("news_keyword")
+            or (sym_cfg.get("symbol_config") or {}).get("news_keyword")
+            or sym_cfg["symbol"])
 
 
 def rss_macro_enabled(db) -> bool:

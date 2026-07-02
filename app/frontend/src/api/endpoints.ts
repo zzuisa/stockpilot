@@ -4,6 +4,7 @@ import type {
   BacktestResult,
   BacktestDataStatus,
   ActivityNews,
+  AdviceHistoryItem,
   BubbleAnalysis,
   DashboardSummary,
   DataUpdate,
@@ -341,14 +342,21 @@ export const pricesApi = {
       .catch(() => ({ symbol, interval, candles: [] as PriceCandle[] })),
 }
 
-// ── 前瞻短线建议（SSE 流式）──────────────────────────────────────────────────
+// ── 前瞻短线建议（SSE 流式 + 持久化/历史）────────────────────────────────────
 export const adviceApi = {
-  streamUrl: (symbol: string, start?: string, end?: string) => {
+  streamUrl: (symbol: string, start?: string, end?: string, force = false) => {
     let u = `${API_BASE}/research/advice/stream?symbol=${encodeURIComponent(symbol)}`
     if (start) u += `&start=${encodeURIComponent(start)}`
     if (end) u += `&end=${encodeURIComponent(end)}`
+    if (force) u += '&force=true'
     return u
   },
+  latest: (symbol: string) =>
+    http
+      .get<{ latest: AdviceHistoryItem | null; history: AdviceHistoryItem[] }>(
+        '/research/advice/latest', { params: { symbol } })
+      .then((r) => r.data)
+      .catch(() => ({ latest: null, history: [] as AdviceHistoryItem[] })),
 }
 
 export interface AttributionHistoryItem {

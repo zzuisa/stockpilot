@@ -415,6 +415,16 @@ export interface AdviceResult {
   created_at?: string
 }
 
+export interface AdviceHistoryItem {
+  id: number
+  ts: string | null
+  is_realtime: boolean
+  stance: string | null
+  window: { start: string | null; end: string | null }
+  result: AdviceResult
+  reasoning: string | null
+}
+
 export interface NewsBrief {
   id: number
   symbol: string

@@ -275,7 +275,7 @@ async def job_ensure_symbol(symbol: str):
                 out["intraday"] = prices.fetch_intraday([sym], s, yf_map=yf_map)
         except Exception as e:
             log.warning("ensure_symbol intraday %s 失败: %s", sym, e)
-        # 3) 新闻(仅 news_auto，按配置来源)
+        # 3) 新闻(仅 news_auto，按配置来源；非美股追加富途资讯)
         if sc.get("news_auto"):
             try:
                 with get_session() as s:
@@ -284,6 +284,8 @@ async def job_ensure_symbol(symbol: str):
                         nn += news.fetch_finnhub([sym], s)
                     if "alphavantage" in sc["news_sources"]:
                         nn += news.fetch_alphavantage([sym], s)
+                    if config.market_of(sc) != "US" or "futu" in sc["news_sources"]:
+                        nn += news.fetch_futu(sc, s)
                     out["news"] = nn
             except Exception as e:
                 log.warning("ensure_symbol news %s 失败: %s", sym, e)
