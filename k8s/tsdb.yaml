@@ -27,6 +27,10 @@ spec:
           - shared_buffers=256MB
           - -c
           - max_connections=50
+          # 关闭并行查询：小型个人库无需并行，且并行会在 /dev/shm 申请 DSM 段，
+          # 是本次「could not resize shared memory segment: No space left on device」的诱因。
+          - -c
+          - max_parallel_workers_per_gather=0
         ports:
         - containerPort: 5432
         env:
@@ -60,10 +64,10 @@ spec:
           timeoutSeconds: 5
         resources:
           requests:
-            memory: "256Mi"
+            memory: "512Mi"
             cpu: "100m"
           limits:
-            memory: "1Gi"
+            memory: "2Gi"       # 1Gi 偏紧(shared_buffers 256MB + /dev/shm tmpfs 也占内存)，放宽到 2Gi
             cpu: "1000m"
       volumes:
       - name: tsdb-data
@@ -72,7 +76,7 @@ spec:
       - name: shm
         emptyDir:
           medium: Memory
-          sizeLimit: 256Mi
+          sizeLimit: 512Mi
 
 ---
 apiVersion: v1
