@@ -50,3 +50,6 @@ Thumbs.db
 
 # 本地接口测试集合（含真实密钥，不提交）
 *.postman_collection.json
+
+# Claude Code 本机个人配置(不入库)
+.claude/settings.local.json
