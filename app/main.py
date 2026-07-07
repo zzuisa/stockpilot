@@ -31,6 +31,7 @@ from api import dashboard, news_llm, research, stream, t212_market, watchlist, w
 from api import quant as quant_api
 from api import backtest as backtest_api
 from api import attribution as attribution_api
+from api import research_query as research_query_api
 from notify import telegram as tg
 
 _STATIC = Path(__file__).parent / "static"
@@ -169,6 +170,7 @@ app.include_router(t212_market.router)
 app.include_router(webhook.router)
 app.include_router(backtest_api.router)
 app.include_router(attribution_api.router)
+app.include_router(research_query_api.router)
 
 
 @app.get("/health")

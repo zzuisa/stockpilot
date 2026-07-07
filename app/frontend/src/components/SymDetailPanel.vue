@@ -8,10 +8,12 @@ import TradeChart from '@/components/TradeChart.vue'
 import DetailChart from '@/components/DetailChart.vue'
 import AttributionPanel from '@/components/AttributionPanel.vue'
 import AdvicePanel from '@/components/AdvicePanel.vue'
+import ResearchQueryPanel from '@/components/ResearchQueryPanel.vue'
 
 // 归因(历史区间复盘) 与 建议(含实时前瞻) 分流：区间终点≈当前 → 刷新建议；否则 → 归因
 const attrRange = ref<{ start: string; end: string } | null>(null)
 const adviceRange = ref<{ start: string; end: string } | null>(null)
+const showResearch = ref(false)
 
 function isRealtime(endIso: string): boolean {
   const end = new Date(endIso).getTime()
@@ -67,7 +69,7 @@ function tierMeta(tier: number | null | undefined): { label: string; type: 'succ
   return { label: '一般', type: 'default' }
 }
 
-watch(() => props.symbol, () => { attrRange.value = null; adviceRange.value = null; startRt() })
+watch(() => props.symbol, () => { attrRange.value = null; adviceRange.value = null; showResearch.value = false; startRt() })
 onMounted(() => { startRt() })
 onUnmounted(() => { stopRt() })
 </script>
@@ -202,6 +204,10 @@ onUnmounted(() => { stopRt() })
       <!-- 历史区间复盘归因(选取非实时区间时) -->
       <attribution-panel v-if="attrRange" :symbol="symbol" :range="attrRange" @close="attrRange = null" />
 
+      <!-- 股票研究 Agent：自由提问 + 意图路由（估值区间/归因/快问快答）-->
+      <research-query-panel v-if="showResearch" :symbol="symbol" @close="showResearch = false" />
+      <button v-else class="research-open" @click="showResearch = true">🔬 展开股票研究 Agent（自由提问）</button>
+
     </template>
   </div>
 </template>
@@ -281,4 +287,6 @@ onUnmounted(() => { stopRt() })
 @keyframes rtpulse { 50% { opacity: .3; } }
 .rt-price { font-family: var(--mono); font-size: 16px; font-weight: 600; }
 .small { font-size: 11px; }
+.research-open { width: 100%; margin-top: 10px; background: transparent; border: 1px dashed var(--line2); color: var(--muted); border-radius: 6px; font-size: 12px; padding: 8px; cursor: pointer; }
+.research-open:hover { border-color: var(--amber); color: var(--amber); }
 </style>

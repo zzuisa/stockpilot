@@ -369,6 +369,21 @@ class PriceAttribution(Base):
                                        name="uq_attr_window"),)
 
 
+class ResearchQuery(Base):
+    """股票研究 Agent 的问答结果(按 标的+问题hash 缓存复用 + 可回看历史)。"""
+    __tablename__ = "research_queries"
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    symbol = Column(Text, nullable=False, index=True)
+    query = Column(Text, nullable=False)              # 用户原始问题
+    query_hash = Column(Text, nullable=False)         # 归一化问题的 sha1[:16]
+    template = Column(Text)                           # 意图模板(valuation/attribution/…)
+    created_at = Column(TIMESTAMP(timezone=True), default=utcnow, index=True)
+    result = Column(JSONB)                            # {template, answer, market_data, freshness, …}
+    tokens = Column(Integer, default=0)
+    __table_args__ = (UniqueConstraint("symbol", "query_hash",
+                                       name="uq_research_symbol_query"),)
+
+
 class AdviceResult(Base):
     """短线投资建议结果(右侧常备面板)。持久化 + 缓存，每标的仅保留最新 5 条。"""
     __tablename__ = "advice_results"
