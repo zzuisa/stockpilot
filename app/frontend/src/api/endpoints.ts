@@ -232,6 +232,8 @@ export const quantApi = {
       buy_mode: 'ind' | 'market' | 'turning'
       profit_pct: number
       stop_loss: number
+      safe_mode?: boolean
+      disaster_stop_pct?: number
       budget_ratio: number
       budget_eur: number
       sell_ratio: number

@@ -20,6 +20,8 @@ class StrategyStart(BaseModel):
     rsi_buy: float = 45
     rsi_sell: float = 55
     stop_loss: float = 2.0        # 硬止损 %
+    safe_mode: bool = False       # 只赚不亏：只在止盈卖出，不因浮亏止损(仅灾难止损兜底)
+    disaster_stop_pct: float = 25.0  # safe_mode 下的灾难止损兜底 %
     profit_pct: float = 0.5       # 盈利目标 %(高于均价此比例时卖出)
     budget_ratio: float = 50.0    # 每次买入占可用现金比例 %
     sell_ratio: float = 100.0     # 每次卖出占持仓比例 %

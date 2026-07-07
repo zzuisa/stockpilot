@@ -46,6 +46,8 @@ const buyMode = ref<'ind' | 'market' | 'turning'>('turning')
 const currency = ref<'USD' | 'EUR'>('USD')
 const profitPct = ref(0.5)
 const stopLoss = ref(2)
+const safeMode = ref(false)          // 只赚不亏：只在止盈卖出，不因浮亏止损
+const disasterStopPct = ref(25)      // safe_mode 下的灾难止损兜底 %
 const budgetEur = ref(1000)
 const budgetRatio = ref(50)
 const sellRatio = ref(100)
@@ -153,6 +155,8 @@ async function startStrategy() {
       buy_mode: buyMode.value,
       profit_pct: profitPct.value,
       stop_loss: stopLoss.value,
+      safe_mode: safeMode.value,
+      disaster_stop_pct: disasterStopPct.value,
       budget_ratio: budgetRatio.value,
       budget_eur: budgetEur.value,
       sell_ratio: sellRatio.value,
@@ -368,7 +372,10 @@ function fmtTs(iso: string | null): string {
           </div>
 
           <div class="params-summary">
-            止盈 {{ stratStatus.params.profit_pct }}% · 止损 {{ stratStatus.params.stop_loss }}%
+            <n-tag v-if="stratStatus.params.safe_mode" size="tiny" type="success" :bordered="false">🛡 只赚不亏</n-tag>
+            止盈 {{ stratStatus.params.profit_pct }}% ·
+            <template v-if="stratStatus.params.safe_mode">止损: 仅 -{{ stratStatus.params.disaster_stop_pct }}% 灾难兜底</template>
+            <template v-else>止损 {{ stratStatus.params.stop_loss }}%</template>
             · 买入: {{ stratStatus.params.buy_mode === 'market' ? '空仓即市价买' : stratStatus.params.buy_mode === 'turning' ? '拐点低买' : 'RSI信号' }}
             <span v-if="stratStatus.params.buy_mode === 'turning' && stratStatus.turn_signal">
               · 拐点信号 <b :style="{ color: stratStatus.turn_signal === 'buy' ? 'var(--up)' : stratStatus.turn_signal === 'sell' ? 'var(--down)' : 'var(--muted)' }">{{ stratStatus.turn_signal }}</b>
@@ -464,13 +471,31 @@ function fmtTs(iso: string | null): string {
             </div>
           </div>
           <div class="field">
-            <label>止损线（低于均价 %）</label>
-            <n-input-number v-model:value="stopLoss" :min="0.1" :max="20" :step="0.5">
+            <label>止损线（低于均价 %）<span v-if="safeMode" class="faint small">· 只赚不亏下不生效</span></label>
+            <n-input-number v-model:value="stopLoss" :min="0.1" :max="20" :step="0.5" :disabled="safeMode">
               <template #suffix>%</template>
             </n-input-number>
             <div class="quick-btns">
               <button v-for="v in [1, 2, 3, 5]" :key="v" class="qbtn" @click="stopLoss = v">{{ v }}%</button>
             </div>
+          </div>
+        </div>
+
+        <!-- 只赚不亏（safe_mode） -->
+        <div class="safe-box" :class="{ on: safeMode }">
+          <div class="safe-head">
+            <n-switch v-model:value="safeMode" size="small" />
+            <span class="safe-title">只赚不亏模式</span>
+            <span class="faint small">不成熟期只在止盈卖出，不因浮亏止损</span>
+          </div>
+          <div v-if="safeMode" class="safe-body">
+            <div class="field" style="margin:0">
+              <label>灾难止损兜底（浮亏跌破才市价止损，防退市/黑天鹅）</label>
+              <n-input-number v-model:value="disasterStopPct" :min="5" :max="90" :step="5" style="width:140px">
+                <template #prefix>-</template><template #suffix>%</template>
+              </n-input-number>
+            </div>
+            <div class="safe-warn">⚠ 日常小浮亏不止损（避免 5.02买→5.01卖 的无谓亏损），仅在浮亏跌破 -{{ disasterStopPct }}% 时兜底止损。代价：极端行情可能长期持有/占用资金。开启后对当前持仓即时生效。</div>
           </div>
         </div>
 
@@ -703,6 +728,12 @@ function fmtTs(iso: string | null): string {
   border-radius: 6px;
   margin-bottom: 12px;
 }
+.safe-box { border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; margin-bottom: 12px; }
+.safe-box.on { border-color: var(--up); background: rgba(61, 214, 140, 0.05); }
+.safe-head { display: flex; align-items: center; gap: 8px; }
+.safe-title { font-size: 13px; font-weight: 600; }
+.safe-body { margin-top: 8px; }
+.safe-warn { font-size: 11px; color: var(--amber); line-height: 1.55; margin-top: 6px; }
 
 /* ── 本次开启收益 ── */
 .pnl-since {

@@ -42,6 +42,8 @@ DEFAULT_PARAMS = {
     "rsi_buy": 45,          # RSI 低于此值才允许买入(仅 buy_mode=ind)
     "rsi_sell": 55,         # 保留(signal_stop 辅助参考)
     "stop_loss": 2.0,       # 硬止损 %(持仓亏损超过即强制卖出,无指标限制)
+    "safe_mode": False,     # 只赚不亏：不成熟期只在止盈卖出，不因浮亏止损(仅灾难止损兜底)
+    "disaster_stop_pct": 25.0,  # safe_mode 下的灾难止损兜底 %(浮亏跌破才市价止损，防退市/黑天鹅)
     "profit_pct": 0.5,      # 盈利目标 %(现价高于均价此比例时卖出)
     "budget_ratio": 50.0,   # 每次买入占可用现金的比例 %
     "sell_ratio": 100.0,    # 每次卖出占持仓的比例 %(100=全仓)
@@ -559,6 +561,7 @@ class StrategyRunner:
             "rebound_pct": p.get("turn_rebound_pct"),
             "rsi_buy": p.get("rsi_buy"), "profit_pct": p.get("profit_pct"),
             "stop_loss": p.get("stop_loss"),
+            "safe_mode": p.get("safe_mode"), "disaster_stop_pct": p.get("disaster_stop_pct"),
         }
 
     @staticmethod
@@ -591,6 +594,9 @@ class StrategyRunner:
         if r == "signal_stop":
             return (f"指标止损：浮亏 {g(c['gain_pct'], '%')} 且 RSI {g(c['rsi'])}<35 超卖、"
                     f"MACD {g(c['macd_diff'])}<0 下行，趋势走弱 → @ {px} 止损离场。")
+        if r == "disaster_stop":
+            return (f"灾难止损：只赚不亏模式下日常不止损，但浮亏 {g(c['gain_pct'], '%')} 已跌破 "
+                    f"-{g(c['disaster_stop_pct'])}% 兜底线 → @ {px} 市价止损，防退市/黑天鹅。")
         return f"{c['side']} @ {px}（{r}）。"
 
     async def _enrich_and_notify(self, tid, side, reason, qty, price, pnl,
@@ -598,7 +604,7 @@ class StrategyRunner:
         """成交类动作可选用 LLM 生成更自然的解释；随后推送通知。"""
         final = explain
         real = reason in ("turning_buy", "market_buy", "ind_buy",
-                          "profit_limit", "hard_stop", "signal_stop")
+                          "profit_limit", "hard_stop", "signal_stop", "disaster_stop")
         if self.params.get("explain_llm", True) and real:
             llm = await asyncio.to_thread(_llm_explain, ctx)
             if llm:
@@ -637,6 +643,13 @@ class StrategyRunner:
         if today != self._day:
             self._day = today
             self.trades_today = 0
+
+    def _loss_stop_pct(self) -> float:
+        """有效止损线 %：safe_mode(只赚不亏)下用灾难止损兜底，否则用常规 stop_loss。"""
+        p = self.params
+        if p.get("safe_mode"):
+            return float(p.get("disaster_stop_pct", 25.0))
+        return float(p.get("stop_loss", 2.0))
 
     # ── 主循环 ──
     async def run(self):
@@ -700,15 +713,16 @@ class StrategyRunner:
                     if not self.sell_avg and self.avg_price > 0:
                         self.sell_avg = self.avg_price
                     self.waiting = "sell_limit"
-                    # 浮亏超阈值 → 撤止盈单转市价止损
+                    # 浮亏超阈值 → 撤止盈单转市价止损(safe_mode 下阈值=灾难止损兜底)
                     if self.avg_price > 0 and price > 0 \
-                            and (price - self.avg_price) / self.avg_price * 100 <= -p["stop_loss"]:
+                            and (price - self.avg_price) / self.avg_price * 100 <= -self._loss_stop_pct():
                         await self._cancel(self.sell_order_id)
                         sq = round(self.qty * p["sell_ratio"] / 100, 4)
                         ms = await self._sell(sq, price)
                         if ms:
                             pnl = sq * (price - self.avg_price)
-                            self._record("sell", "hard_stop", sq, price, pnl, ms)
+                            self._record("sell", "disaster_stop" if p.get("safe_mode") else "hard_stop",
+                                         sq, price, pnl, ms)
                             self.holding = p["sell_ratio"] < 100
                         self.sell_order_id = None
                         self.sell_target = self.sell_avg = self.sell_qty_pending = 0.0
@@ -742,18 +756,21 @@ class StrategyRunner:
                     sell_qty = round(self.qty * p["sell_ratio"] / 100, 4)
 
                     # 已深亏 → 直接可成交限价硬止损（24/5），不挂止盈
-                    if price > 0 and gain_pct <= -p["stop_loss"]:
+                    # safe_mode(只赚不亏)下阈值抬到灾难止损兜底，日常小浮亏不止损。
+                    if price > 0 and gain_pct <= -self._loss_stop_pct():
                         ms = await self._sell(sell_qty, price)
                         if ms:
                             pnl = sell_qty * (price - self.avg_price)
-                            self._record("sell", "hard_stop", sell_qty, price, pnl, ms)
+                            self._record("sell", "disaster_stop" if p.get("safe_mode") else "hard_stop",
+                                         sell_qty, price, pnl, ms)
                             self.holding = p["sell_ratio"] < 100
                         await asyncio.sleep(3)
                         continue
 
                     # 指标止损（亏损 + RSI 超卖 + MACD 下行）→ 可成交限价（24/5）
-                    if ind and gain_pct < 0 and ind["rsi"] < SIGNAL_STOP_RSI \
-                            and ind["macd_diff"] < 0:
+                    # safe_mode 下完全跳过(这正是 NIO 5.02买→5.01卖 小亏的根因)。
+                    if not p.get("safe_mode") and ind and gain_pct < 0 \
+                            and ind["rsi"] < SIGNAL_STOP_RSI and ind["macd_diff"] < 0:
                         ms = await self._sell(sell_qty, price)
                         if ms:
                             pnl = sell_qty * (price - self.avg_price)
