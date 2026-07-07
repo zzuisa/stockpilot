@@ -312,6 +312,8 @@ export interface QuantStrategyStatus {
     buy_mode: 'ind' | 'market' | 'turning'
     rsi_buy: number
     stop_loss: number
+    safe_mode?: boolean
+    disaster_stop_pct?: number
     profit_pct: number
     budget_ratio: number
     budget_eur: number
