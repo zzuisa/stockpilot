@@ -378,6 +378,23 @@ export const attributionApi = {
       .catch(() => [] as AttributionHistoryItem[]),
 }
 
+export interface ResearchQueryHistoryItem {
+  id: number; query: string; template: string | null
+  created_at: string; result: Record<string, unknown>
+}
+
+export const researchQueryApi = {
+  streamUrl: (symbol: string, q: string, force = false) =>
+    `${API_BASE}/research/query/stream?symbol=${encodeURIComponent(symbol)}`
+    + `&q=${encodeURIComponent(q)}`
+    + (force ? '&force=true' : ''),
+  history: (symbol: string, limit = 10) =>
+    http
+      .get<ResearchQueryHistoryItem[]>('/research/query/history', { params: { symbol, limit } })
+      .then((r) => r.data)
+      .catch(() => [] as ResearchQueryHistoryItem[]),
+}
+
 export const backtestApi = {
   run: (cfg: BacktestConfig) =>
     http.post<BacktestResult>('/backtest/run', cfg, SLOW).then((r) => r.data),
