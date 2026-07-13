@@ -79,7 +79,7 @@ function ask(q?: string) {
 
 async function confirmIntent(id: string) {
   const r = await intentsApi.confirm(id)
-  r?.ok ? notify.success(r.message || '已下单') : notify.warning(r?.message || '未执行')
+  r?.ok ? notify.ok(r.message || '已下单') : notify.info(r?.message || '未执行')
   loadPending()
 }
 async function skipIntent(id: string) {
