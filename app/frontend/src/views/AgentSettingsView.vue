@@ -47,9 +47,9 @@ async function save() {
         daily_auto_trades: dailyAutoTrades.value,
       },
     })
-    notify.success('设置已保存')
+    notify.ok('设置已保存')
   } catch {
-    notify.error('保存失败')
+    notify.err('保存失败')
   } finally {
     saving.value = false
   }
