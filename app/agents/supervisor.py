@@ -13,6 +13,7 @@ import json
 import logging
 
 import settings
+from agents import runlog
 from analysis import thesis as thesis_mod
 
 log = logging.getLogger(__name__)
@@ -65,6 +66,10 @@ async def run_supervisor(symbol: str, query: str, *, mode: str = "interactive",
             f"标的：{sym}\n用户问题：{query}", recall_text] if x)},
     ]
     tool_calls_log: list[dict] = []
+    timeline: list[dict] = [runlog.event(
+        "start", agent="supervisor",
+        detail=("已载入研究档案，开始规划" if prior else "无历史档案，冷启动规划"))]
+    decisions: list[dict] = []          # 写类工具（下单/改策略）的落地记录
     answer: str | None = None
 
     for _ in range(max(1, MAX_ROUNDS)):
@@ -77,8 +82,13 @@ async def run_supervisor(symbol: str, query: str, *, mode: str = "interactive",
                     temperature=0.3, max_tokens=2000, timeout=90)
         except Exception as e:                   # noqa: BLE001
             log.warning("supervisor LLM 调用失败 %s: %s", sym, e)
+            timeline.append(runlog.event("thinking", agent="supervisor",
+                                         text=f"（LLM 调用失败：{e}）"))
             break
         msg = resp.choices[0].message
+        if (msg.content or "").strip():          # 记录 supervisor 的可见推理
+            timeline.append(runlog.event("thinking", agent="supervisor",
+                                         text=(msg.content or "").strip()[:2000]))
         calls = getattr(msg, "tool_calls", None)
         if not calls:
             answer = (msg.content or "").strip()
@@ -98,6 +108,12 @@ async def run_supervisor(symbol: str, query: str, *, mode: str = "interactive",
                                "detail": f"委派 {name}({_arg_hint(args)})"})
             out = await tools.dispatch(name, args)
             tool_calls_log.append({"tool": name, "args": args})
+            is_write = name in ("create_order_intent", "adjust_strategy")
+            timeline.append(runlog.event(
+                "decision" if is_write else "tool",
+                tool=name, args=args, result=_summ(out)))
+            if is_write:
+                decisions.append({"tool": name, "args": args, "out": out})
             await _emit(emit, {"type": "phase", "agent": name, "status": "done"})
             messages.append({"role": "tool", "tool_call_id": c.id,
                              "content": json.dumps(out, ensure_ascii=False,
@@ -108,11 +124,16 @@ async def run_supervisor(symbol: str, query: str, *, mode: str = "interactive",
         answer = await _final_synthesis(client, messages, emit)
 
     answer = enforce_compliance(answer)
+    timeline.append(runlog.event("answer", agent="supervisor", text=answer))
     await _emit(emit, {"type": "delta", "agent": "supervisor", "text": answer})
 
-    # 落库 AgentRun（先存拿到 run_id，供 thesis 快照回指）
+    # 落库 AgentRun（先存拿到 run_id，供 thesis 快照回指与托管追加执行步骤）
     run_id = await asyncio.to_thread(
-        _save_run, sym, mode, query, tool_calls_log, answer)
+        runlog.save_run, sym, mode, query,
+        timeline=timeline, tool_calls=tool_calls_log,
+        decision=(decisions or None),
+        outcome={"answer_len": len(answer), "n_tools": len(tool_calls_log),
+                 "n_decisions": len(decisions)})
     # 反思：把本次结论蒸馏进研究档案
     try:
         await thesis_mod.distill(sym, answer, prior=prior,
@@ -120,7 +141,7 @@ async def run_supervisor(symbol: str, query: str, *, mode: str = "interactive",
     except Exception as e:                       # noqa: BLE001
         log.warning("supervisor distill %s 失败: %s", sym, e)
 
-    data = {"answer": answer, "decision": None, "run_id": run_id,
+    data = {"answer": answer, "decision": (decisions or None), "run_id": run_id,
             "tool_calls": tool_calls_log}
     await _emit(emit, {"type": "phase", "agent": "supervisor", "status": "done"})
     await _emit(emit, {"type": "result", "data": data})
@@ -148,26 +169,18 @@ def _arg_hint(args: dict) -> str:
                or args.get("code") or "")[:40]
 
 
+def _summ(out) -> str:
+    """工具返回值的时间轴摘要（截断，避免 transcript 膨胀）。"""
+    try:
+        s = json.dumps(out, ensure_ascii=False, default=str)
+    except Exception:
+        s = str(out)
+    return s[:400]
+
+
 def _recall_sync(symbol: str):
     try:
         return thesis_mod.recall(symbol)
     except Exception as e:                       # noqa: BLE001
         log.warning("recall %s 失败: %s", symbol, e)
         return None, ""
-
-
-def _save_run(symbol: str, mode: str, trigger: str,
-              tool_calls: list, answer: str) -> int | None:
-    try:
-        from db import get_session
-        from models import AgentRun
-        with get_session() as db:
-            row = AgentRun(symbol=symbol, mode=mode, trigger=trigger,
-                           transcript={"tool_calls": tool_calls},
-                           decision=None, outcome={"answer_len": len(answer)})
-            db.add(row)
-            db.flush()
-            return row.id
-    except Exception as e:                       # noqa: BLE001
-        log.warning("save AgentRun %s 失败: %s", symbol, e)
-        return None

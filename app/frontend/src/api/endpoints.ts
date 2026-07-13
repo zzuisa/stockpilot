@@ -401,8 +401,9 @@ export const agentApi = {
   streamUrl: (symbol: string, query: string) =>
     `${API_BASE}/agent/stream?symbol=${encodeURIComponent(symbol)}`
     + `&query=${encodeURIComponent(query)}`,
-  history: (symbol: string, limit = 10) =>
-    http.get('/agent/history', { params: { symbol, limit } }).then((r) => r.data).catch(() => []),
+  history: (symbol?: string, mode?: string, limit = 30) =>
+    http.get('/agent/history', { params: { symbol, mode, limit } }).then((r) => r.data).catch(() => []),
+  run: (id: number) => http.get(`/agent/runs/${id}`).then((r) => r.data),
 }
 
 // 应用设置（托管开关 / 风险预算 / kill-switch / MCP 写暴露）。

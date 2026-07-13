@@ -58,6 +58,12 @@ const routes: RouteRecordRaw[] = [
     meta: { label: '任务' },
   },
   {
+    path: '/agent-log',
+    name: 'agent-log',
+    component: () => import('@/views/AgentTimelineView.vue'),
+    meta: { label: 'Agent 记录' },
+  },
+  {
     path: '/settings',
     name: 'settings',
     component: () => import('@/views/AgentSettingsView.vue'),

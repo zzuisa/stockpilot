@@ -34,26 +34,31 @@ async def run_autonomy_cycle(symbol: str) -> dict:
     from agents.supervisor import run_supervisor
     since = datetime.now(timezone.utc) - timedelta(seconds=5)
     try:
-        await run_supervisor(sym, _AUTONOMY_PROMPT, mode="autonomy", allow_write=True)
+        res = await run_supervisor(sym, _AUTONOMY_PROMPT, mode="autonomy",
+                                   allow_write=True)
     except Exception as e:                       # noqa: BLE001
         log.warning("autonomy supervisor %s 失败: %s", sym, e)
         return {"symbol": sym, "ran": False, "skipped_reason": f"supervisor error: {e}"}
 
-    settled = await asyncio.to_thread(_settle_intents, sym, since)
+    run_id = (res or {}).get("run_id")
+    settled = await asyncio.to_thread(_settle_intents, sym, since, run_id)
     return {"symbol": sym, "ran": True, **settled}
 
 
-def _settle_intents(symbol: str, since: datetime) -> dict:
+def _settle_intents(symbol: str, since: datetime, run_id: int | None = None) -> dict:
     """对本轮新建的 pending 意向按预算结算：执行 or 升级人工确认。"""
     from db import get_session
     from models import OrderIntent
     from sqlalchemy import select
     from trading import executor
 
+    from agents import runlog
+
     cap = appsettings.auto_execute_cap(symbol)
     cfg = appsettings.get_for(symbol)
     daily_cap = int((cfg.get("risk_budget") or {}).get("daily_auto_trades", 0) or 0)
     executed, escalated = [], []
+    events: list[dict] = []
 
     with get_session() as db:
         rows = db.execute(
@@ -67,17 +72,28 @@ def _settle_intents(symbol: str, since: datetime) -> dict:
     for iid, val in pending:
         if appsettings.kill_switch():
             escalated.append(iid)
+            events.append(runlog.event("exec", intent_id=iid, action="escalate",
+                                       reason="kill-switch", value_eur=val))
             continue
         if cap > 0 and val <= cap and today_auto < daily_cap:
             res = executor.execute_intent(iid, "autonomy")
             if res.get("ok"):
                 executed.append(iid)
                 today_auto += 1
+                events.append(runlog.event("exec", intent_id=iid, action="executed",
+                                           value_eur=val, detail=res.get("message")))
             else:
                 escalated.append(iid)          # 风控/执行失败 → 留待人工看
+                events.append(runlog.event("exec", intent_id=iid, action="escalate",
+                                           reason=res.get("message"), value_eur=val))
         else:
             _escalate(symbol, iid, val, cap)
             escalated.append(iid)
+            events.append(runlog.event("exec", intent_id=iid, action="escalate",
+                                       reason=f"超单笔自动执行预算 €{cap}", value_eur=val))
+    if run_id and (events or pending):
+        runlog.append_run(run_id, events=events,
+                          outcome_patch={"executed": executed, "escalated": escalated})
     return {"executed": executed, "escalated": escalated}
 
 
