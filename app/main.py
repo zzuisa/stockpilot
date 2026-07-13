@@ -32,6 +32,10 @@ from api import quant as quant_api
 from api import backtest as backtest_api
 from api import attribution as attribution_api
 from api import research_query as research_query_api
+from api import agent as agent_api
+from api import intents as intents_api
+from api import settings as settings_api
+import agents  # noqa: F401  —— import 即把领域子 Agent 注册进能力总线（供 supervisor / MCP）
 from notify import telegram as tg
 
 _STATIC = Path(__file__).parent / "static"
@@ -75,6 +79,9 @@ def _schedule_jobs():
     # 过期 intent 清理
     add(jobs.job_expire_intents, CronTrigger(minute="*/5"),
         id="expire_intents")
+    # 全 Agent 托管：盘中每小时自主复盘一次（内部按 autonomy_enabled / kill-switch 判定，关时空跑）
+    add(jobs.job_autonomy, CronTrigger(day_of_week="mon-fri", hour="15-22", minute=5),
+        id="autonomy")
 
 
 @asynccontextmanager
@@ -171,6 +178,17 @@ app.include_router(webhook.router)
 app.include_router(backtest_api.router)
 app.include_router(attribution_api.router)
 app.include_router(research_query_api.router)
+app.include_router(agent_api.router)
+app.include_router(intents_api.router)
+app.include_router(settings_api.router)
+
+# 能力总线 → MCP：把注册表里的只读能力经 HTTP/SSE 暴露给外部 Agent（token 鉴权）。
+# 依赖缺失 / 未配置 token 时 mount_mcp 安静跳过，不影响启动。
+try:
+    from mcp_server import mount_mcp
+    mount_mcp(app)
+except Exception as e:  # noqa: BLE001
+    log.warning("MCP 挂载失败（非致命）：%s", e)
 
 
 @app.get("/health")

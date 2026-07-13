@@ -7,6 +7,7 @@ import type { OrderKind, OrderSide, T212Instrument, T212Position, TimeValidity }
 import { apiError } from '@/api/client'
 import { shortTicker } from '@/composables/format'
 import { useNotify } from '@/composables/useNotify'
+import AgentConsultPanel from './AgentConsultPanel.vue'
 
 const props = defineProps<{
   show: boolean
@@ -37,6 +38,11 @@ const livePrice = ref<number | null>(null)
 const quoting = ref(false)
 
 const ticker = computed(() => props.instrument?.ticker ?? '')
+
+// 下单前咨询 Agent（把 side 场景带入）
+const showConsult = ref(false)
+const consultSymbol = computed(() => shortTicker(ticker.value))
+const consultContext = computed(() => (side.value === 'buy' ? '买入' : '卖出'))
 
 /** 拉取实时现价并返回；失败返回 0 */
 async function refreshQuote(): Promise<number> {
@@ -262,6 +268,14 @@ async function submit() {
     </div>
 
     <div v-if="kind !== 'market'" class="hint">免费 API 限速 1 req/2s</div>
+
+    <div class="block">
+      <n-button size="small" secondary :type="showConsult ? 'warning' : 'default'"
+                @click="showConsult = !showConsult">
+        🤝 {{ showConsult ? '收起 Agent 咨询' : '下单前咨询 Agent' }}
+      </n-button>
+    </div>
+    <AgentConsultPanel v-if="showConsult && consultSymbol" :symbol="consultSymbol" :context="consultContext" />
 
     <template #footer>
       <n-button type="primary" block :loading="loading" :disabled="submitDisabled" @click="submit">

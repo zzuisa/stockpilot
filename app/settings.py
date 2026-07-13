@@ -96,6 +96,10 @@ RISK_DAILY_LOSS_LIMIT_EUR = float(_get("RISK_DAILY_LOSS_LIMIT_EUR", "100") or 10
 DEFAULT_ORDER_VALUE_EUR = float(_get("DEFAULT_ORDER_VALUE_EUR", "150") or 150)
 INTENT_TTL_MINUTES = int(_get("INTENT_TTL_MINUTES", "30") or 30)
 
+# ─── Agent / MCP ───
+# 外部 Agent 走 HTTP/SSE 调 MCP 的鉴权 token。未配置则 MCP 端点整体关闭（不暴露能力）。
+MCP_AUTH_TOKEN = _get("MCP_AUTH_TOKEN")
+
 # ─── 其他 ───
 ROOT_PATH = os.environ.get("ROOT_PATH", "")
 WATCHLIST_PATH = _get("WATCHLIST_PATH", "/app/config/watchlist.yaml")
@@ -107,3 +111,4 @@ finnhub_enabled = bool(FINNHUB_TOKEN)
 llm_enabled = bool(SILICONFLOW_API_KEY)
 telegram_enabled = bool(TELEGRAM_BOT_TOKEN)
 email_enabled = bool(SMTP_USER and SMTP_PASSWORD)
+mcp_enabled = bool(MCP_AUTH_TOKEN)

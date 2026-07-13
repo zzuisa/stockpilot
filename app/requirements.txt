@@ -15,6 +15,8 @@ langchain>=0.3.0
 langchain-openai>=0.2.0
 langgraph>=0.2.0
 # vectorbt==0.28.5  # 回测专用,按需手动安装: pip install vectorbt==0.28.5
+# MCP server（能力总线经 HTTP/SSE 暴露给外部 Agent；含 low-level Server + SSE 传输）
+mcp>=1.2.0
 feedparser==6.0.11
 # 富途 OpenAPI SDK（app/skills/futuapi 脚本用；与 pandas/numpy 兼容，验证无冲突）
 futu-api>=9.0.0
