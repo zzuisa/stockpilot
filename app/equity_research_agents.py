@@ -172,7 +172,9 @@ async def node_analyze(state: ResearchState, emit) -> dict:
         fresh_line,
         _clues_text(clues),
         "要求：数字只引用 market_data，缺失明说“未获取”；分析师共识注意时效；区分已证实与指控；"
-        "结尾给“下一验证点”。用中文，Markdown 分节，情景表用表格。不得出现买入/卖出/加减仓建议。",
+        "结尾给“下一验证点”。财报日期只用 market_data.earnings：status=confirmed 才可写“下次财报”，"
+        "status=estimated 必须写“预计/待官方确认”，绝不把 last_reported 或任何早于 as_of 的日期"
+        "表述为“下次/即将”的财报。用中文，Markdown 分节，情景表用表格。不得出现买入/卖出/加减仓建议。",
     ] if x)
 
     text = await _run_llm("research", _skill_prompt(), human, emit, temperature=0.3)

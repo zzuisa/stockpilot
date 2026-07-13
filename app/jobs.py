@@ -484,6 +484,15 @@ async def job_backfill():
     return await _run("backfill", lambda: asyncio.to_thread(work))
 
 
+async def job_autonomy():
+    """全 Agent 托管循环：对开启托管的标的自主分析→反思→决策→预算内执行。
+    仅当全局托管开启且非 kill-switch 时有动作（内部再逐标的判定）。"""
+    async def work():
+        from agents.autonomy import run_all
+        return await run_all()
+    return await _run("autonomy", work)
+
+
 JOBS = {
     "t212_sync": job_t212_sync,
     "intraday": job_intraday,
@@ -496,6 +505,7 @@ JOBS = {
     "daily_report": job_daily_report,
     "ensure_indicators": job_ensure_indicators,
     "backfill": job_backfill,
+    "autonomy": job_autonomy,
 }
 
 

@@ -7,7 +7,7 @@
 """
 import logging
 import time
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy import select
 
@@ -91,23 +91,63 @@ def _trend(symbol: str) -> dict | None:
     return None
 
 
-def _earnings_date(info: dict, symbol: str) -> str | None:
-    ts = info.get("earningsTimestamp") or info.get("earningsTimestampStart")
-    if ts:
-        try:
-            return datetime.fromtimestamp(int(ts), tz=timezone.utc).strftime("%Y-%m-%d")
-        except Exception:
-            pass
+def _earnings_meta(info: dict, symbol: str) -> dict:
+    """下次财报的结构化信息，**永不把过去的日期当作“下次”**。
+
+    yfinance `.info.earningsTimestamp` 常是“最近一次已发布”的财报(过去)，直接取用会在
+    盘后/新季度把旧日期误报为“下次财报”。这里汇总所有候选来源(info 时间戳 + calendar 窗口)，
+    按“今天”切分未来/过去：有未来日期取最近的一个(confirmed)；全在过去则说明数据源滞后，
+    以上次财报按季度外推一个 estimated 日期并明确标注，绝不冒充确认日。
+
+    返回 {date, status: confirmed|estimated|unknown, last_reported, note}。
+    """
+    today = datetime.now(timezone.utc).date()
+    future: list[date] = []
+    past: list[date] = []
+
+    def _bucket(d: date | None):
+        if d is None:
+            return
+        (future if d >= today else past).append(d)
+
+    # 1) info 里的时间戳（Start/End 是下次窗口，earningsTimestamp 多为上次已发布）
+    for key in ("earningsTimestampStart", "earningsTimestampEnd", "earningsTimestamp"):
+        ts = info.get(key)
+        if ts:
+            try:
+                _bucket(datetime.fromtimestamp(int(ts), tz=timezone.utc).date())
+            except Exception:
+                pass
+    # 2) calendar：yfinance 的“下次财报”估计窗口（通常最贴近实际）
     try:
         import yfinance as yf
         cal = yf.Ticker(symbol).calendar
-        ed = (cal or {}).get("Earnings Date") if isinstance(cal, dict) else None
-        if ed:
-            d = ed[0] if isinstance(ed, (list, tuple)) else ed
-            return str(d)[:10]
+        eds = (cal or {}).get("Earnings Date") if isinstance(cal, dict) else None
+        for ed in (eds if isinstance(eds, (list, tuple)) else [eds]):
+            if ed is None:
+                continue
+            try:
+                d = ed if isinstance(ed, date) else datetime.fromisoformat(str(ed)[:10]).date()
+                _bucket(d)
+            except Exception:
+                pass
     except Exception:
         pass
-    return None
+
+    last_reported = max(past).isoformat() if past else None
+    if future:
+        return {"date": min(future).isoformat(), "status": "confirmed",
+                "last_reported": last_reported, "note": ""}
+    if past:                      # 数据源只有过去日期 → 滞后，按季度(~91天)外推并标注
+        est = max(past)
+        while est < today:
+            est += timedelta(days=91)
+        return {"date": est.isoformat(), "status": "estimated",
+                "last_reported": last_reported,
+                "note": f"数据源未提供确认的下次财报日；基于上次财报 {last_reported} 按季度外推，"
+                        f"为预计值，需以公司官方公告为准"}
+    return {"date": None, "status": "unknown", "last_reported": None,
+            "note": "数据源未提供财报日期"}
 
 
 def build_market_data(symbol: str) -> dict:
@@ -166,7 +206,8 @@ def build_market_data(symbol: str) -> dict:
         "fundamentals": fundamentals,
         "analyst": analyst,
         "freshness": freshness,
-        "earnings_date": _earnings_date(info, sym),
+        "earnings_date": (_em := _earnings_meta(info, sym))["date"],  # 向后兼容(字符串或 None)
+        "earnings": _em,        # 结构化: status(confirmed/estimated/unknown)/last_reported/note
         "indicators": _latest_indicators(sym),
         "trend": _trend(sym),
     }
@@ -184,8 +225,14 @@ def quick_fact_answer(md: dict, query: str) -> str | None:
     q = query
     sym = md["symbol"]
     if any(k in q for k in ("财报", "earnings", "业绩")) and any(k in q for k in ("几号", "日期", "什么时候", "when", "date")):
+        em = md.get("earnings") or {}
         d = md.get("earnings_date")
-        return f"{sym} 下次财报日：{d}" if d else f"{sym} 暂无可用的下次财报日期数据。"
+        if not d:
+            return f"{sym} 暂无可用的下次财报日期数据。"
+        if em.get("status") == "estimated":
+            return (f"{sym} 下次财报日预计约 {d}（{em.get('note')}；"
+                    f"上次财报 {em.get('last_reported')}）。")
+        return f"{sym} 下次财报日：{d}。"
     if any(k in q for k in ("现价", "多少钱", "股价", "价格", "current price", "price")):
         lp = md["quote"].get("live_price")
         return f"{sym} 现价约 {lp}（{md['as_of']}）。" if lp else f"{sym} 暂无实时报价数据。"

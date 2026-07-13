@@ -395,6 +395,32 @@ export const researchQueryApi = {
       .catch(() => [] as ResearchQueryHistoryItem[]),
 }
 
+// 多 Agent supervisor 流式对话（复用 ResearchQueryPanel 的 EventSource 模式）。
+// ctx 可带 side/持仓等上下文，拼进 query 里让 Agent 结合场景给建议。
+export const agentApi = {
+  streamUrl: (symbol: string, query: string) =>
+    `${API_BASE}/agent/stream?symbol=${encodeURIComponent(symbol)}`
+    + `&query=${encodeURIComponent(query)}`,
+  history: (symbol: string, limit = 10) =>
+    http.get('/agent/history', { params: { symbol, limit } }).then((r) => r.data).catch(() => []),
+}
+
+// 应用设置（托管开关 / 风险预算 / kill-switch / MCP 写暴露）。
+export const settingsApi = {
+  get: (symbol?: string) =>
+    http.get('/settings', { params: { symbol } }).then((r) => r.data),
+  put: (patch: Record<string, any>, symbol?: string) =>
+    http.put('/settings', patch, { params: { symbol } }).then((r) => r.data),
+}
+
+// OrderIntent 网页内确认/忽略（与 Telegram 按钮同一执行路径，含风控）。
+export const intentsApi = {
+  list: (status?: string, limit = 50) =>
+    http.get('/intents', { params: { status, limit } }).then((r) => r.data).catch(() => []),
+  confirm: (id: string) => http.post(`/intents/${encodeURIComponent(id)}/confirm`).then((r) => r.data),
+  skip: (id: string) => http.post(`/intents/${encodeURIComponent(id)}/skip`).then((r) => r.data),
+}
+
 export const backtestApi = {
   run: (cfg: BacktestConfig) =>
     http.post<BacktestResult>('/backtest/run', cfg, SLOW).then((r) => r.data),

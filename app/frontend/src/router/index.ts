@@ -57,6 +57,12 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/views/JobsView.vue'),
     meta: { label: '任务' },
   },
+  {
+    path: '/settings',
+    name: 'settings',
+    component: () => import('@/views/AgentSettingsView.vue'),
+    meta: { label: '设置 / 托管' },
+  },
   { path: '/:pathMatch(.*)*', redirect: '/overview' },
 ]
 

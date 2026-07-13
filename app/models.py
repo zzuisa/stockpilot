@@ -419,3 +419,50 @@ class TradeLog(Base):
     order_id = Column(Text)                          # T212 订单 id
     env = Column(Text)                               # demo | live
     detail = Column(JSONB)
+
+
+# ════════════ Agent 化重构（能力总线 + 多 Agent + 托管）新增表 ════════════
+
+class StockThesis(Base):
+    """每只股票的“研究档案”——会持续进化的结构化知识，Agent 每次分析在其上做 diff 而非重写。
+    supervisor/托管循环运行前 Recall、运行后 Distill 回写（见 analysis/thesis.py）。"""
+    __tablename__ = "stock_thesis"
+    symbol = Column(Text, primary_key=True)
+    version = Column(Integer, default=1)
+    thesis = Column(JSONB)          # {核心逻辑/多空要点/关键假设/已验证/待验证/估值锚/风险/下一验证点[]}
+    updated_at = Column(TIMESTAMP(timezone=True), default=utcnow, onupdate=utcnow)
+
+
+class StockThesisRev(Base):
+    """thesis 的 append-only 历史快照，可回看/回滚；记录每版相对上版改了什么。"""
+    __tablename__ = "stock_thesis_rev"
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    symbol = Column(Text, index=True)
+    version = Column(Integer)
+    thesis = Column(JSONB)
+    changelog = Column(Text)                         # 一句话：本次相对上版的变化
+    source_run_id = Column(BigInteger)               # 触发本次更新的 agent_runs.id
+    created_at = Column(TIMESTAMP(timezone=True), default=utcnow, index=True)
+
+
+class AgentRun(Base):
+    """一次 Agent 运行的落库（交互式或托管）：委派轨迹 + 决策 + 结果，作为反思的闭环记忆。"""
+    __tablename__ = "agent_runs"
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    ts = Column(TIMESTAMP(timezone=True), default=utcnow, index=True)
+    symbol = Column(Text, index=True)
+    mode = Column(Text)                              # interactive | autonomy
+    trigger = Column(Text)                           # 用户问题 / 定时 / 事件
+    transcript = Column(JSONB)                       # supervisor 委派与子 Agent 阶段/思考
+    decision = Column(JSONB)                         # 结构化决策（改策略/建 intent/无动作）
+    outcome = Column(JSONB)                          # 执行结果（intent_id/order_id/params 变更等）
+    tokens = Column(Integer, default=0)
+
+
+class AppSetting(Base):
+    """全局应用设置（此前完全没有）。托管开关、风险预算、kill-switch 等 UI 可编辑项。
+    单行 key/value，key='global' 存主设置；按 symbol 覆盖用 key='sym:<SYMBOL>'。"""
+    __tablename__ = "app_settings"
+    key = Column(Text, primary_key=True)             # 'global' | 'sym:NIO' ...
+    value = Column(JSONB, default=dict)              # {autonomy_enabled, kill_switch, risk_budget:{...}}
+    updated_at = Column(TIMESTAMP(timezone=True), default=utcnow, onupdate=utcnow)
