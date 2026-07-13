@@ -21,14 +21,38 @@ router = APIRouter(prefix="/api/v1/agent", tags=["agent"])
 
 
 @router.get("/history")
-async def history(symbol: str = Query(...), limit: int = Query(10, ge=1, le=50),
-                  db=Depends(get_db)):
-    rows = db.execute(
-        select(AgentRun).where(AgentRun.symbol == symbol.upper())
-        .order_by(AgentRun.ts.desc()).limit(limit)).scalars().all()
-    return [{"id": r.id, "ts": r.ts.isoformat(), "mode": r.mode,
-             "trigger": r.trigger, "decision": r.decision,
-             "outcome": r.outcome} for r in rows]
+async def history(symbol: str | None = Query(None),
+                  mode: str | None = Query(None, description="interactive|autonomy"),
+                  limit: int = Query(30, ge=1, le=100), db=Depends(get_db)):
+    """Agent 运行记录（手动+托管统一，可按 symbol/mode 过滤）。用于时间轴列表。"""
+    q = select(AgentRun).order_by(AgentRun.ts.desc()).limit(limit)
+    if symbol:
+        q = q.where(AgentRun.symbol == symbol.upper())
+    if mode:
+        q = q.where(AgentRun.mode == mode)
+    rows = db.execute(q).scalars().all()
+    out = []
+    for r in rows:
+        tl = (r.transcript or {}).get("timeline") or []
+        out.append({"id": r.id, "ts": r.ts.isoformat(), "symbol": r.symbol,
+                    "mode": r.mode, "trigger": r.trigger, "outcome": r.outcome,
+                    "n_events": len(tl),
+                    "has_decision": bool(r.decision)})
+    return out
+
+
+@router.get("/runs/{run_id}")
+async def get_run(run_id: int, db=Depends(get_db)):
+    """单次运行的完整时间轴（思考/委派/工具结果/决策/答案 + 托管执行步骤）。"""
+    r = db.get(AgentRun, run_id)
+    if not r:
+        return {"error": "not found"}
+    tr = r.transcript or {}
+    return {"id": r.id, "ts": r.ts.isoformat(), "symbol": r.symbol,
+            "mode": r.mode, "trigger": r.trigger,
+            "timeline": tr.get("timeline") or [],
+            "tool_calls": tr.get("tool_calls") or [],
+            "decision": r.decision, "outcome": r.outcome}
 
 
 @router.get("/stream")
