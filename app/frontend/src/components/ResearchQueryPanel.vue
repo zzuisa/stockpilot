@@ -156,6 +156,19 @@ const facts = computed(() => {
     { k: '财报日', v: fmt(m.earnings_date) },
   ].filter((x) => x.v !== '—')
 })
+
+// 归因(attribution)结果：无 answer 字段，用 primary/narrative/evidence_news 渲染
+const attr = computed(() => {
+  const r = result.value as any
+  if (r && (Array.isArray(r.primary) || r.narrative)) return r
+  return null
+})
+function dirClass(d?: string) {
+  if (!d) return 'neutral'
+  if (d.includes('多')) return 'up'
+  if (d.includes('空')) return 'down'
+  return 'neutral'
+}
 </script>
 
 <template>
@@ -222,7 +235,50 @@ const facts = computed(() => {
       </div>
 
       <!-- eslint-disable-next-line vue/no-v-html -->
-      <div class="rr-body" v-html="answerHtml" />
+      <div v-if="answerHtml" class="rr-body" v-html="answerHtml" />
+
+      <!-- 归因结果（attribution 模板）-->
+      <div v-if="attr" class="attr">
+        <div v-for="(p, i) in (attr.primary || [])" :key="'p' + i" class="attr-cause primary">
+          <div class="ac-head">
+            <span class="ac-dir" :class="dirClass(p.direction)">{{ p.direction || '中性' }}</span>
+            <span class="ac-cause">{{ p.cause }}</span>
+            <span class="ac-conf">{{ p.confidence }}%</span>
+          </div>
+          <div v-if="p.evidence" class="ac-ev">{{ p.evidence }}</div>
+        </div>
+        <div v-for="(p, i) in (attr.secondary || [])" :key="'s' + i" class="attr-cause secondary">
+          <div class="ac-head">
+            <span class="ac-dir" :class="dirClass(p.direction)">{{ p.direction || '中性' }}</span>
+            <span class="ac-cause">{{ p.cause }}</span>
+            <span class="ac-conf">{{ p.confidence }}%</span>
+          </div>
+          <div v-if="p.evidence" class="ac-ev">{{ p.evidence }}</div>
+        </div>
+
+        <p v-if="attr.narrative" class="attr-narr">{{ attr.narrative }}</p>
+        <p v-if="attr.caveats" class="attr-caveat">⚠ {{ attr.caveats }}</p>
+
+        <!-- 使用的数据：新闻来源(链接) -->
+        <div v-if="attr.evidence_news && attr.evidence_news.length" class="attr-src">
+          <div class="as-title">📎 引用数据 · 新闻来源（{{ attr.evidence_news.length }}）</div>
+          <ul class="as-list">
+            <li v-for="n in attr.evidence_news" :key="n.id">
+              <a v-if="n.url" :href="n.url" target="_blank" rel="noopener">{{ n.title }}</a>
+              <span v-else>{{ n.title }}</span>
+              <span v-if="n.date" class="as-date mono">{{ n.date }}</span>
+              <span v-if="n.online" class="as-online">联网</span>
+            </li>
+          </ul>
+        </div>
+
+        <!-- 价格数据摘要 -->
+        <div v-if="attr.price_stats" class="attr-ps mono small">
+          📊 价格数据：{{ attr.price_stats.n }} 点<template v-if="attr.price_stats.n >= 2"> ·
+            {{ attr.price_stats.start_date }}→{{ attr.price_stats.end_date }} ·
+            {{ attr.price_stats.start_close }}→{{ attr.price_stats.end_close }}（{{ attr.price_stats.pct_change }}%）</template><template v-else>（本地数据不足，已结合联网新闻分析）</template>
+        </div>
+      </div>
     </div>
 
     <div v-else-if="running && !error && !phases.length" class="faint small" style="text-align:center;padding:6px">
@@ -259,6 +315,30 @@ const facts = computed(() => {
 .tag { font-size: 10.5px; color: var(--amber); background: rgba(232,163,61,.1); border: 1px solid var(--amber-dim); border-radius: 9px; padding: 0 7px; flex: none; }
 .cache-chip { font-size: 11px; color: var(--muted); background: var(--panel2); border: 1px solid var(--line2); border-radius: 10px; padding: 1px 8px; }
 .rq-err { color: var(--down); font-size: 12px; padding: 6px 0; }
+
+/* 归因结果 */
+.attr { margin-top: 8px; display: flex; flex-direction: column; gap: 8px; }
+.attr-cause { border: 1px solid var(--line2); border-radius: 6px; padding: 7px 9px; background: var(--panel2); }
+.attr-cause.secondary { opacity: .85; }
+.ac-head { display: flex; align-items: center; gap: 8px; }
+.ac-dir { font-size: 11px; font-weight: 600; border-radius: 5px; padding: 1px 7px; flex: none; }
+.ac-dir.up { color: var(--up); border: 1px solid var(--up); }
+.ac-dir.down { color: var(--down); border: 1px solid var(--down); }
+.ac-dir.neutral { color: var(--muted); border: 1px solid var(--line2); }
+.ac-cause { font-size: 13px; font-weight: 600; color: var(--text); flex: 1; }
+.ac-conf { font-size: 11px; color: var(--amber); flex: none; }
+.ac-ev { font-size: 12px; color: var(--muted); margin-top: 4px; line-height: 1.5; }
+.attr-narr { font-size: 12.5px; color: var(--text); line-height: 1.7; margin: 4px 0 0; }
+.attr-caveat { font-size: 11.5px; color: var(--amber); margin: 0; }
+.attr-src { border-top: 1px dashed var(--line2); padding-top: 7px; }
+.as-title { font-size: 11px; color: var(--muted); letter-spacing: .03em; margin-bottom: 5px; }
+.as-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.as-list li { font-size: 12px; line-height: 1.4; }
+.as-list a { color: var(--amber); text-decoration: none; }
+.as-list a:hover { text-decoration: underline; }
+.as-date { color: var(--faint); font-size: 10.5px; margin-left: 6px; }
+.as-online { color: var(--up); font-size: 10px; border: 1px solid var(--up); border-radius: 4px; padding: 0 4px; margin-left: 6px; }
+.attr-ps { color: var(--faint); border-top: 1px dashed var(--line2); padding-top: 6px; }
 
 .phases { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
 .phase { border: 1px solid var(--line); border-radius: 6px; padding: 6px 9px; background: var(--panel2); }

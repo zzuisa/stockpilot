@@ -158,7 +158,7 @@ def _online_news(sym: str, start: datetime, end: datetime, db) -> list:
 
     def _q(win_only: bool):
         stmt = (select(News.id, News.title, News.published, News.sentiment,
-                       News.llm_reason, News.source_tier)
+                       News.llm_reason, News.source_tier, News.url)
                 .where(News.symbol == sym))
         if win_only:
             stmt = stmt.where(News.published >= start, News.published <= end)
@@ -167,7 +167,8 @@ def _online_news(sym: str, start: datetime, end: datetime, db) -> list:
     rows = _q(True) or _q(False)   # 优先窗口内；窗口内无则取该标的最近新闻
     return [{"id": r[0], "title": r[1],
              "date": r[2].strftime("%Y-%m-%d") if r[2] else None,
-             "sentiment": r[3], "llm_reason": r[4], "tier": r[5], "online": True}
+             "sentiment": r[3], "llm_reason": r[4], "tier": r[5],
+             "url": r[6], "online": True}
             for r in rows]
 
 
@@ -201,7 +202,8 @@ def _gather_clues(symbol: str, start: datetime, end: datetime) -> tuple[dict, di
             .limit(15)).all()
         news_clue = [{"id": n[0], "title": n[1],
                       "date": n[2].strftime("%Y-%m-%d") if n[2] else None,
-                      "sentiment": n[3], "llm_reason": n[4], "tier": n[5]} for n in news]
+                      "sentiment": n[3], "llm_reason": n[4], "tier": n[5],
+                      "url": n[7]} for n in news]
 
         # 库内无已分析新闻 → 主动联网搜索(Finnhub)兜底，而非直接摆烂
         if not news_clue:
@@ -429,7 +431,9 @@ async def node_synth(state: AttributionState, config) -> dict:
                 "secondary": [], "narrative": "综合归因生成失败，请重试。",
                 "confidence": 0, "caveats": "历史归因仅供参考，非投资建议。"}
     data.setdefault("caveats", "历史数据可能会骗人；归因仅供参考，非投资建议。")
-    data["evidence_news"] = [{"id": n["id"], "title": n["title"]}
+    data["evidence_news"] = [{"id": n["id"], "title": n["title"],
+                              "url": n.get("url"), "date": n.get("date"),
+                              "online": n.get("online", False)}
                              for n in state["clues"].get("news", [])[:8]]
     data["price_stats"] = ps
     # 先落库(在发 result 之前，避免 SSE 客户端收到结果即断开→任务被取消导致漏存)
