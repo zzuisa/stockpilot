@@ -143,8 +143,36 @@ def _intraday_window(sym: str, start: datetime, end: datetime) -> list:
         return []
 
 
+def _online_news(sym: str, start: datetime, end: datetime, db) -> list:
+    """库内无新闻时的联网兜底：抓 Finnhub 公司新闻(按标的在线检索)存库，
+    再无 sentiment 过滤地重查，返回原始头条线索(未 LLM 打分，带 online=True 标记)。"""
+    try:
+        from collectors import news as _news
+        days = min(30, max(7, (datetime.now(timezone.utc).date() - start.date()).days + 2))
+        got = _news.fetch_finnhub([sym], db, days=days)
+        db.commit()
+        log.info("attribution 联网新闻兜底 %s: 新增 %s 条", sym, got)
+    except Exception as e:
+        log.warning("attribution 联网新闻兜底失败 %s: %s", sym, e)
+        return []
+
+    def _q(win_only: bool):
+        stmt = (select(News.id, News.title, News.published, News.sentiment,
+                       News.llm_reason, News.source_tier)
+                .where(News.symbol == sym))
+        if win_only:
+            stmt = stmt.where(News.published >= start, News.published <= end)
+        return db.execute(stmt.order_by(News.published.desc()).limit(12)).all()
+
+    rows = _q(True) or _q(False)   # 优先窗口内；窗口内无则取该标的最近新闻
+    return [{"id": r[0], "title": r[1],
+             "date": r[2].strftime("%Y-%m-%d") if r[2] else None,
+             "sentiment": r[3], "llm_reason": r[4], "tier": r[5], "online": True}
+            for r in rows]
+
+
 def _gather_clues(symbol: str, start: datetime, end: datetime) -> tuple[dict, dict]:
-    """返回 (price_stats, clues)。全部来自库内已采集/已分析数据。"""
+    """返回 (price_stats, clues)。库内数据为主；库内无新闻时联网(Finnhub)兜底。"""
     sym = symbol.upper()
     with get_session() as db:
         # 价格(窗口 + 前 30 交易日用于趋势/指标背景)
@@ -174,6 +202,10 @@ def _gather_clues(symbol: str, start: datetime, end: datetime) -> tuple[dict, di
         news_clue = [{"id": n[0], "title": n[1],
                       "date": n[2].strftime("%Y-%m-%d") if n[2] else None,
                       "sentiment": n[3], "llm_reason": n[4], "tier": n[5]} for n in news]
+
+        # 库内无已分析新闻 → 主动联网搜索(Finnhub)兜底，而非直接摆烂
+        if not news_clue:
+            news_clue = _online_news(sym, start, end, db)
 
         # 高信号新闻精华(窗口附近最近一条)
         brief = db.execute(
@@ -287,6 +319,10 @@ async def node_gather(state: AttributionState, config) -> dict:
 
 def _win_desc(s) -> str:
     ps = s["price_stats"]
+    if ps.get("n", 0) < 2:
+        # 价格数据缺口(≠真无波动)：提示按新闻线索归因，勿臆断"价格无变动"
+        return (f"标的 {s['symbol']}：系统本地价格数据不足(仅 {ps.get('n', 0)} 个数据点)，"
+                "无法计算区间涨跌；请主要依据下方新闻/情绪线索归因，不要臆断价格无变动。")
     return (f"标的 {s['symbol']}，区间 {ps.get('start_date')}~{ps.get('end_date')}，"
             f"收盘 {ps.get('start_close')}→{ps.get('end_close')}（{ps.get('pct_change')}%），"
             f"区间高低 {ps.get('high')}/{ps.get('low')}，波动 {ps.get('vol_pct')}%。")
@@ -364,7 +400,13 @@ async def node_synth(state: AttributionState, config) -> dict:
               '"evidence":""}],"narrative":"一段中文叙述","confidence":0-100,'
               '"caveats":"一句话提示"}。只输出 JSON。cause 精炼，evidence 引用新闻标题或指标。'
               "若价格几乎无变动，primary 给'区间波动/无显著驱动'。")
-    if noise:
+    if ps.get("n", 0) < 2 and not state.get("hyp_fundamental"):
+        # 价格数据缺口且无新闻线索 → 诚实说"数据不足"，不编造"区间波动/无显著驱动"
+        human = (f"标的 {state['symbol']}：系统未取到足够价格数据(仅 {ps.get('n', 0)} 点)，"
+                 "也未检索到可用新闻线索。请诚实产出【数据不足，暂无法归因】："
+                 "primary 给 cause='数据不足，暂无法归因'、direction='中性'、confidence≤30、"
+                 "evidence 说明缺哪些数据；caveats 提示可稍后重试或检查标的代码。不要臆造区间波动结论。")
+    elif noise:
         human = _win_desc(state) + "\n该时段价格几乎无显著变动，按区间波动归因。"
     else:
         human = (_win_desc(state)
@@ -421,8 +463,12 @@ def _parse_json(text: str) -> Optional[dict]:
 # ── 图 ────────────────────────────────────────────────────────────────────────
 def _route_after_gather(state: AttributionState):
     ps = state["price_stats"]
-    if ps.get("n", 0) < 2 or abs(ps.get("pct_change", 0)) < NOISE_MIN_PCT:
-        return ["agent_synth"]          # 区间波动 → 直接综合
+    has_news = bool((state.get("clues") or {}).get("news"))
+    thin = ps.get("n", 0) < 2 or abs(ps.get("pct_change", 0)) < NOISE_MIN_PCT
+    if thin:
+        # 价格数据不足/波动过小，但有新闻线索(含联网抓取) → 仍走基本面+情绪分析(用新闻解释)，
+        # 不再直接判"区间波动"。真的既无价格又无新闻才短路到 synth 诚实说明。
+        return ["agent_fundamental", "agent_sentiment"] if has_news else ["agent_synth"]
     return ["agent_fundamental", "agent_technical", "agent_sentiment"]
 
 
