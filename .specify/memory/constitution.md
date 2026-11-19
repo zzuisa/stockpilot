@@ -40,9 +40,8 @@ Telegram / LLM(SiliconFlow) / T212 / yfinance / DNS 等外部依赖不可用时�
 <type>(<scope>): <主题，祈使句，中/英均可，≤72 字>
 
 <正文：为什么改 + 改了什么 + 影响/验证，可换行>
-
-Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
 ```
+- 提交只署本人（Ao），**不加任何 Co-Authored-By 或工具署名**。
 - `type` ∈ feat | fix | refactor | perf | chore | docs | test | build | ci | revert；`scope` 用模块名（quant / backtest / attribution / tsdb / api / frontend / deploy…）。
 - **原子提交**：一次提交只做一件事；跑不过/半成品不提交。
 - StockPilot 三连：**commit → push GitHub(origin/master) → `./deploy.sh code`**。
